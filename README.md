@@ -41,3 +41,9 @@ Values are clamped between 0 and 100, except for delay which is greater or equal
 Mod setting to blacklist biter prototypes by the user. These won't revive ever.
 Mod setting for max revives per unit. Avoid infintely reviving the same biter every tick.
 Mod setting to set a maximum number of revives per second to avoid excessive burst UPS load.
+Mod setting to blacklist forces units from reviving.
+
+
+Handle some changes via event to save runtime checks being needed as very unlikely to ever occur.
+Handle if a force is merged via event. As will need any revives on the old force moved to the new one.
+Handle if a surface is cleared or deleted via event. As both will need us to delete all queued revives on those surfaces.
