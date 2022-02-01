@@ -9,6 +9,7 @@ Notes
 - Any "unit" entity that breathes air is included in the revivie logic by default. This will include all vanilla Factorio biters and I assume most modded enemies as well.
 - At present the player's character and compilatron are excluded from reviving. There is also a mod setting to add additional prototype names for exclusion.
 - Revive chance is a scale based on mod and RCON settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
+- Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dieing.
 
 
 
@@ -42,8 +43,16 @@ Mod setting to blacklist biter prototypes by the user. These won't revive ever.
 Mod setting for max revives per unit. Avoid infintely reviving the same biter every tick.
 Mod setting to set a maximum number of revives per second to avoid excessive burst UPS load.
 Mod setting to blacklist forces units from reviving.
-
+Mod setting for zzz (configurable text) floating text over units delayed for reviving when they are delayed for more than 2 (test this looks right) seconds.
 
 Handle some changes via event to save runtime checks being needed as very unlikely to ever occur.
-Handle if a force is merged via event. As will need any revives on the old force moved to the new one.
-Handle if a surface is cleared or deleted via event. As both will need us to delete all queued revives on those surfaces.
+    - If a force is merged via event. As will need any revives on the old force moved to the new one.
+    - If a surface is cleared or deleted via event. As both will need us to delete all queued revives on those surfaces.
+
+
+
+
+Add timer/clock to the text display mod so it can be used with time limited abilities via rcon on screen nicely.
+Muppet GUI needs a check on old pc between committed and local files. As on new machine weird doubling up of all folders had occured. i.e. scripts (1) and notes (1). The doubling up notes TODO had different contents.
+
+Push the updated Utils from this mod back in Utils Git and apply to railway tunnel mod.

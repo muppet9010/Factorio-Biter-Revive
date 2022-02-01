@@ -517,10 +517,23 @@ Utils.RoundNumberToDecimalPlaces = function(num, numDecimalPlaces)
     else
         result = math_floor(num + 0.5)
     end
-    if result == "nan" then
+    if result ~= result then
+        -- Result is NaN so set it to 0.
         result = 0
     end
     return result
+end
+
+--- Checks if the provided number is a NaN value.
+--- Should be done locally if called frequently.
+---@param value number
+---@return boolean valueIsANan
+Utils.IsNumberNan = function(value)
+    if value ~= value then
+        return true
+    else
+        return false
+    end
 end
 
 -- This steps through the ints with min and max being seperatee steps.
@@ -574,7 +587,7 @@ end
 ---@param min number
 ---@param max number
 ---@return number
-Utils.clampNumber = function(value, min, max)
+Utils.ClampNumber = function(value, min, max)
     return math_min(math_max(value, min), max)
 end
 

@@ -9,10 +9,9 @@ local function OnLoad()
     BiterRevive.OnLoad()
 end
 
+---@param event on_runtime_mod_setting_changed|null
 local function OnSettingChanged(event)
-    --if event == nil or event.setting == "xxxxx" then
-    --	local x = tonumber(settings.global["xxxxx"].value)
-    --end
+    BiterRevive.OnSettingChanged(event)
 end
 
 local function OnStartup()
