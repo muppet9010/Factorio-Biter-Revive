@@ -6,6 +6,7 @@ local factorioUtil = require("__core__/lualib/util")
 local PrototypeAttributes = require("utility/prototype-attributes")
 
 local math_min, math_max, math_floor, math_ceil, math_sqrt, math_abs, math_random, math_exp, math_rad, math_cos, math_sin = math.min, math.max, math.floor, math.ceil, math.sqrt, math.abs, math.random, math.exp, math.rad, math.cos, math.sin
+local string_match, string_rep, string_find, string_sub, string_len, string_gsub, string_lower = string.match, string.rep, string.find, string.sub, string.len, string.gsub, string.lower
 
 --- Copies a table and all of its children all the way down.
 ---@type fun(object:table):table
@@ -884,14 +885,15 @@ end
 
 --- Makes a comma seperated text string from a table's keys. Includes spaces after each comma.
 ---@param aTable table @ doesn't support commas in values or nested tables. Really for logging.
+---@return string
 Utils.TableKeyToCommaString = function(aTable)
-    local newString = ""
+    local newString
     if Utils.IsTableEmpty(aTable) then
-        return newString
+        return ""
     end
     for key in pairs(aTable) do
-        if newString == "" then
-            newString = key
+        if newString == nil then
+            newString = tostring(key)
         else
             newString = newString .. ", " .. tostring(key)
         end
@@ -901,16 +903,57 @@ end
 
 --- Makes a comma seperated text string from a table's values. Includes spaces after each comma.
 ---@param aTable table @ doesn't support commas in values or nested tables. Really for logging.
+---@return string
 Utils.TableValueToCommaString = function(aTable)
-    local newString = ""
+    local newString
     if Utils.IsTableEmpty(aTable) then
-        return newString
+        return ""
     end
     for _, value in pairs(aTable) do
-        if newString == "" then
-            newString = value
+        if newString == nil then
+            newString = tostring(value)
         else
             newString = newString .. ", " .. tostring(value)
+        end
+    end
+    return newString
+end
+
+--- Makes a numbered text string from a table's keys with the keys wrapped in single quotes.
+--- i.e. 1: 'firstKey', 2: 'secondKey'
+---@param aTable table @ doesn't support commas in values or nested tables. Really for logging.t
+---@return string
+Utils.TableKeyToNumberedListString = function(aTable)
+    local newString
+    if Utils.IsTableEmpty(aTable) then
+        return ""
+    end
+    local count = 1
+    for key in pairs(aTable) do
+        if newString == nil then
+            newString = count .. ": '" .. tostring(key) .. "'"
+        else
+            newString = newString .. ", " .. count .. ": '" .. tostring(key) .. "'"
+        end
+    end
+    return newString
+end
+
+--- Makes a numbered text string from a table's values with the values wrapped in single quotes.
+--- i.e. 1: 'firstValue', 2: 'secondValue'
+---@param aTable table @ doesn't support commas in values or nested tables. Really for logging.t
+---@return string
+Utils.TableValueToNumberedListString = function(aTable)
+    local newString
+    if Utils.IsTableEmpty(aTable) then
+        return ""
+    end
+    local count = 1
+    for _, value in pairs(aTable) do
+        if newString == nil then
+            newString = count .. ": '" .. tostring(value) .. "'"
+        else
+            newString = newString .. ", " .. count .. ": '" .. tostring(value) .. "'"
         end
     end
     return newString
@@ -929,7 +972,7 @@ end
 Utils._TableContentsToJSON = function(targetTable, name, singleLineOutput, tablesLogged, indent, stopTraversing)
     local newLineCharacter = "\r\n"
     indent = indent or 1
-    local indentstring = string.rep(" ", (indent * 4))
+    local indentstring = string_rep(" ", (indent * 4))
     if singleLineOutput then
         newLineCharacter = ""
         indentstring = ""
@@ -1019,11 +1062,11 @@ end
 ---@return uint surfaceIndex
 ---@return Position position
 Utils.SurfacePositionStringToSurfaceAndPosition = function(surfacePositionString)
-    local underscoreIndex = string.find(surfacePositionString, "_")
-    local surfaceId = tonumber(string.sub(surfacePositionString, 1, underscoreIndex - 1))
-    local commaIndex = string.find(surfacePositionString, ",")
-    local positionX = string.sub(surfacePositionString, underscoreIndex + 1, commaIndex - 1)
-    local positionY = string.sub(surfacePositionString, commaIndex + 1, string.len(surfacePositionString))
+    local underscoreIndex = string_find(surfacePositionString, "_")
+    local surfaceId = tonumber(string_sub(surfacePositionString, 1, underscoreIndex - 1))
+    local commaIndex = string_find(surfacePositionString, ",")
+    local positionX = string_sub(surfacePositionString, underscoreIndex + 1, commaIndex - 1)
+    local positionY = string_sub(surfacePositionString, commaIndex + 1, string_len(surfacePositionString))
     return surfaceId, {x = positionX, y = positionY}
 end
 
@@ -1216,7 +1259,7 @@ Utils.DisableIntroMessage = function()
 end
 
 Utils.PadNumberToMinimumDigits = function(input, requiredLength)
-    local shortBy = requiredLength - string.len(input)
+    local shortBy = requiredLength - string_len(input)
     for i = 1, shortBy do
         input = "0" .. input
     end
@@ -1230,7 +1273,7 @@ Utils.DisplayNumberPretty = function(number)
     local formatted = number
     local k
     while true do
-        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+        formatted, k = string_gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
         if (k == 0) then
             break
         end
@@ -1362,7 +1405,7 @@ Utils.ToBoolean = function(text)
     end
     local textType = type(text)
     if textType == "string" then
-        text = string.lower(text)
+        text = string_lower(text)
         if text == "true" then
             return true
         elseif text == "false" then
@@ -1458,7 +1501,7 @@ Utils.IsPositionWithinCircled = function(circleCenter, radius, position)
 end
 
 Utils.GetValueAndUnitFromString = function(text)
-    return string.match(text, "%d+%.?%d*"), string.match(text, "%a+")
+    return string_match(text, "%d+%.?%d*"), string_match(text, "%a+")
 end
 
 -- Moves the full Lua Item Stacks so handles items with data and other complicated items. Updates the passed in inventory object.
@@ -1825,13 +1868,20 @@ Utils.RemoveEntitiesRecipesFromTechnologies = function(entityPrototype, recipes,
     return technologiesChanged
 end
 
-Utils.SplitStringOnCharacters = function(text, splitCharacters, returnAskey)
+--- Split a string on the specified characters. The splitting characters aren't included in the output. The results are trimmed of blank spaces.
+---@param text string
+---@param splitCharacters string
+---@param returnAsKey? boolean|null @ If nil or false then an array of strings are returned. If true then a table with the string as the keys and the value as boolean true are returned.
+---@return string[]|table<string, True>
+Utils.SplitStringOnCharacters = function(text, splitCharacters, returnAsKey)
     local list = {}
     local results = text:gmatch("[^" .. splitCharacters .. "]*")
     for phrase in results do
-        phrase = Utils.StringTrim(phrase)
+        -- Trim spaces from the phrase text. Code from Utils.StringTrim()
+        phrase = string_match(phrase, "^()%s*$") and "" or string_match(phrase, "^%s*(.*%S)")
+
         if phrase ~= nil and phrase ~= "" then
-            if returnAskey ~= nil and returnAskey == true then
+            if returnAsKey ~= nil and returnAsKey == true then
                 list[phrase] = true
             else
                 table.insert(list, phrase)
@@ -1843,7 +1893,7 @@ end
 
 -- trim6 from http://lua-users.org/wiki/StringTrim
 Utils.StringTrim = function(text)
-    return string.match(text, "^()%s*$") and "" or string.match(text, "^%s*(.*%S)")
+    return string_match(text, "^()%s*$") and "" or string_match(text, "^%s*(.*%S)")
 end
 
 -- Kills an entity and handles the optional arguments as Facotrio API doesn't accept nil arguments.

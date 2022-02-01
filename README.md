@@ -1,6 +1,7 @@
 # Factorio-Biter-Revive
 
-Any biter that dies will have a chance to revive back to life based on mod settings. The chance of the revive is based on a configurable scale driven by the enemy force's evolution.
+Any biter that dies will have a chance to revive back to life based on mod settings and temporary settings from RCON commands. The mod is focused on facilitating streamer integrations.
+The chance of the revive is based on a configurable scale driven by the enemy force's evolution.
 
 
 Notes
