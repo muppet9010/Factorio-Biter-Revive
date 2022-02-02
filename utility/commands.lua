@@ -3,7 +3,13 @@
 local Commands = {}
 local Utils = require("utility/utils")
 
--- Call from OnLoad
+--- Register a function to be triggered when a command is run. Includes support to restrict usage to admins.
+--- Call from OnLoad and will remove any existing identically named command so no risk of double registering error.
+--- When the command is run the ComamndFunction recieves a single argument of type "CustomCommandData".
+---@param name string
+---@param helpText LocalisedString
+---@param commandFunction function
+---@param adminOnly boolean
 Commands.Register = function(name, helpText, commandFunction, adminOnly)
     commands.remove_command(name)
     local handlerFunction
@@ -26,9 +32,10 @@ Commands.Register = function(name, helpText, commandFunction, adminOnly)
     commands.add_command(name, helpText, handlerFunction)
 end
 
--- Supports multiple string arguments seperated by a space as a commands parameter. Can use pairs of single or double quotes to define the start and end of an argument string with spaces in it. Supports JSON array [] and dictionary {} of N depth and content characters.
--- String quotes can be escaped by "\"" within their own quote type, ie: 'don\'t' will come out as "don't". Note the same quote type rule, i.e. "don\'t" will come out as "don\'t" . Otherwise the escape character \ wil be passed through as regular text.
--- Returns a table of sequentially indexed arguments
+--- Supports multiple string arguments seperated by a space as a commands parameter. Can use pairs of single or double quotes to define the start and end of an argument string with spaces in it. Supports JSON array [] and dictionary {} of N depth and content characters.
+--- String quotes can be escaped by "\"" within their own quote type, ie: 'don\'t' will come out as "don't". Note the same quote type rule, i.e. "don\'t" will come out as "don\'t" . Otherwise the escape character \ wil be passed through as regular text.
+---@param parameterString string
+---@return any[] arguments
 Commands.GetArgumentsFromCommand = function(parameterString)
     local args = {}
     if parameterString == nil or parameterString == "" or parameterString == " " then
@@ -108,23 +115,26 @@ Commands.GetArgumentsFromCommand = function(parameterString)
     return args
 end
 
-Commands._StringToTypedObject = function(text)
-    if text == "nil" then
+--- Internal comands function that returns the input text as its correct type.
+---@param inputText string
+---@return null|number|boolean|table|string typedValue
+Commands._StringToTypedObject = function(inputText)
+    if inputText == "nil" then
         return nil
     end
-    local castedText = tonumber(text)
+    local castedText = tonumber(inputText)
     if castedText ~= nil then
         return castedText
     end
-    castedText = Utils.ToBoolean(text)
+    castedText = Utils.ToBoolean(inputText)
     if castedText ~= nil then
         return castedText
     end
-    castedText = game.json_to_table(text)
+    castedText = game.json_to_table(inputText)
     if castedText ~= nil then
         return castedText
     end
-    return text
+    return inputText
 end
 
 return Commands

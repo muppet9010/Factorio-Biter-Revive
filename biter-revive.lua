@@ -2,6 +2,7 @@ local BiterRevive = {}
 local Events = require("utility/events")
 local Utils = require("utility/utils")
 local Colors = require("utility/colors")
+local Commands = require("utility/commands")
 
 local UnitsIgnored = {character = "character", compilatron = "compilatron"}
 local DelayGroupingTicks = 15 -- How many ticks between each goup of biters to revive.
@@ -38,7 +39,7 @@ BiterRevive.CreateGlobals = function()
     global.modSettings_evolutionRequirementMin = global.modSettings_evolutionRequirementMin or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_evolutionRequirementMax = global.modSettings_evolutionRequirementMax or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_reviveChanceBaseValue = global.modSettings_reviveChanceBaseValue or 0 ---@type double @ Range of 0 to 1.
-    global.modSettings_reviveChancePerEvoPercentFormula = global.modSettings_reviveChancePerEvoPercentFormula or "" ---@type string
+    global.modSettings_reviveChancePerEvoPercentFormula = global.modSettings_reviveChancePerEvoPercentFormula or "" ---@type string @ expects evolution to be provided as a "evo" variable with number equivilent of the evolution % above min revive evo. i.e. value of 2 for 2%.
     global.modSettings_reviveChancePerEvoNumber = global.modSettings_reviveChancePerEvoPercentNumber or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_reviveDelayMin = global.modSettings_reviveDelayMin or 0 ---@type Tick
     global.modSettings_reviveDelayMax = global.modSettings_reviveDelayMax or 0 ---@type Tick
@@ -61,6 +62,7 @@ BiterRevive.OnLoad = function()
     Events.RegisterHandlerEvent(defines.events.on_forces_merged, "BiterRevive.OnForcesMerged", BiterRevive.OnForcesMerged)
     Events.RegisterHandlerEvent(defines.events.on_surface_deleted, "BiterRevive.OnSurfaceRemoved", BiterRevive.OnSurfaceRemoved)
     Events.RegisterHandlerEvent(defines.events.on_surface_cleared, "BiterRevive.OnSurfaceRemoved", BiterRevive.OnSurfaceRemoved)
+    Commands.Register("biter_revive_add_modifier", {"command.biter_revive_add_modifier"}, BiterRevive.OnCommand_AddModifier, true)
 end
 
 ---@param event on_runtime_mod_setting_changed|null
@@ -314,7 +316,7 @@ BiterRevive.ProcessQueue = function(event)
         end
 
         for reviveIndex, reviveDetails in pairs(reviveQueueTickObjects) do
-            -- We will handle surface's being deleted and forces removed/merged via events so no need to track them here.
+            -- We handle surface's being deleted and forces merged via events so no need to check them per execution here.
 
             -- Do the actual revive asuming a suitable position is found.
             spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 5, 0.1)
@@ -378,14 +380,14 @@ BiterRevive.OnSurfaceRemoved = function(event)
     end
 end
 
---- Checks a forumla string handles an evo value of 0.1 (10%). If it does returns the formula string, otherwise returns a blank string.
+--- Checks a forumla string handles an evo value of 10% (10). If it does returns the formula string, otherwise returns a blank string.
 ---@param formulaStringToTest string
 ---@return string validatedFormulaString
 BiterRevive.GetValdiatedFormulaString = function(formulaStringToTest)
     local success =
         pcall(
         function()
-            return load("local evo = 0.1; return " .. formulaStringToTest)()
+            return load("local evo = 10; return " .. formulaStringToTest)()
         end
     )
     if success then
@@ -408,6 +410,12 @@ end
 BiterRevive.CalculateCurrentDelayMinimum = function()
 end
 BiterRevive.CalculateCurrentDelayMaximum = function()
+end
+
+--- Handler of the RCON command "biter_revive_add_modifier".
+---@param command CustomCommandData
+BiterRevive.OnCommand_AddModifier = function(command)
+    local args = Commands.GetArgumentsFromCommand(command.parameter)
 end
 
 -- TODO: RCON commands being recieved and processed.
