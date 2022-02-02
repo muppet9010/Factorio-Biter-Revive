@@ -8,6 +8,26 @@ local UnitsIgnored = {character = "character", compilatron = "compilatron"}
 local DelayGroupingTicks = 15 -- How many ticks between each goup of biters to revive.
 local ForceEvoCacheTicks = 60 -- How long to cache a forces evo for before it is refreshed on next dead unit.
 
+local Command_Attributes = {
+    duration = "duration",
+    settings = "settings",
+    priority = "priority"
+}
+local Command_Priority = {
+    enforced = "enforced",
+    base = "base",
+    add = "add"
+}
+local Command_SettingNames = {
+    evoMin = "evoMin",
+    evoMax = "evoMax",
+    chanceBase = "chanceBase",
+    chancePerEvo = "chancePerEvo",
+    chanceFormula = "chanceFormula",
+    delayMin = "delayMin",
+    delayMax = "delayMax"
+}
+
 ---@class ReviveQueueTickObject
 ---@field prototypeName string
 ---@field orientation RealOrientation
@@ -397,6 +417,7 @@ BiterRevive.GetValdiatedFormulaString = function(formulaStringToTest)
     end
 end
 
+-- TODO: updating the global values when mod settings are changed or RCON commands recieved.
 BiterRevive.CalculateCurrentEvolutionMinimum = function()
 end
 BiterRevive.CalculateCurrentEvolutionMaximum = function()
@@ -416,9 +437,75 @@ end
 ---@param command CustomCommandData
 BiterRevive.OnCommand_AddModifier = function(command)
     local args = Commands.GetArgumentsFromCommand(command.parameter)
-end
+    local errorMessageStart = "Biter Revive - command biter_revive_add_modifier "
 
--- TODO: RCON commands being recieved and processed.
--- TODO: updating the global values when mod settings are changed or RCOn commands recieved.
+    -- Check the top level JSON object table.
+    local data = args[1]
+    if not Commands.ParseTableArgument(data, true, command.name, "Json object", Command_Attributes) then
+        return
+    end
+
+    -- Check the main attributes of the object.
+    local duration = data.duration
+    if not Commands.ParseNumberArgument(duration, "integer", true, command.name, "duration", 0) then
+        return
+    end
+
+    local priority = data.priority
+    if not Commands.ParseStringArgument(priority, true, command.name, "priority", Command_Priority) then
+        return
+    end
+
+    local settings = data.settings
+    if not Commands.ParseTableArgument(settings, true, command.name, settings, Command_SettingNames) then
+        return
+    end
+
+    -- Check the settings specific fields in the object. Note that none of the settings force value ranges.
+    local evoMin = settings.evoMin
+    if not Commands.ParseNumberArgument(evoMin, "integer", false, command.name, "evoMin") then
+        return
+    end
+
+    local evoMax = settings.evoMax
+    if not Commands.ParseNumberArgument(evoMax, "integer", false, command.name, "evoMax") then
+        return
+    end
+
+    local chanceBase = settings.chanceBase
+    if not Commands.ParseNumberArgument(chanceBase, "integer", false, command.name, "chanceBase") then
+        return
+    end
+
+    local chancePerEvo = settings.chancePerEvo
+    if not Commands.ParseNumberArgument(chancePerEvo, "integer", false, command.name, "chancePerEvo") then
+        return
+    end
+
+    local chanceFormula = settings.chanceFormula
+    if not Commands.ParseStringArgument(chanceFormula, "string", false, command.name, "chanceFormula") then
+        return
+    end
+
+    local delayMin = settings.delayMin
+    if not Commands.ParseNumberArgument(delayMin, "integer", false, command.name, "delayMin") then
+        return
+    end
+
+    local delayMax = settings.delayMax
+    if not Commands.ParseNumberArgument(delayMax, "integer", false, command.name, "delayMax") then
+        return
+    end
+
+    -- Check that one or more settings where included, otherwise the command will do nothing.
+    if evoMin == nil and evoMax == nil and chanceBase == nil and chancePerEvo == nil and chanceFormula == nil and delayMin == nil and delayMax == nil then
+        game.print(errorMessageStart .. "no actual setting was included within the settings table.")
+        return
+    end
+
+    -- TODO: add comamnd results in to commands table
+    -- TODO: schedule removal from commands table at duration.
+    -- TODO: force update of current runtime values.
+end
 
 return BiterRevive
