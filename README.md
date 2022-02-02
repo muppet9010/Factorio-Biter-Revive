@@ -38,7 +38,7 @@ Each command will include:
 - Settings: one or more settings that this command includes values for. These settings will correspond to the mod's settings. While the mod setting values are restricted in range, command setting values can be at any scale of the correct type (i.e. integer) and the final result will be clamped to between 0% and 100%. This is to allow unusual streamer requirements.
 - Priority: this commands hierarchical state during the evaluation for current runtime settings. Types are: Enforced, Base, Add.
 
-When the mod is evaluating command and mod settings to identify the current runtime settings it follows the below logic. It reviews all active commands for inclusion of the current setting:
+When the mod is evaluating command and mod settings to identify the current runtime settings it follows the below logic. It reviews all active commands for inclusion of the current setting, with the exception of "chanceFormula" setting (see its command setting fr details).
 1. If any have the Enforced priority then only these commands contribute to the runtime value of the setting. All other non Enforced priority commands and the mod setting are ignored for this. If multiple commands have Enforced priority then the "widest" vlaue will be used, i.e the lowest if the setting is a minimum and the largest if the setting is a maximum.
 2. If any have the Base priority then these commands will set the base value of the setting, replacing the mod setting. Any Add priority commands will be applied on top of this. If multiple commands have Base priority then the "widest" value will be used, i.e the lowest if the setting is a minimum and the largest if the setting is a maximum.
 3. If no command had Enforce or Base priority for this setting then the mod setting value will provide the base value.
@@ -52,7 +52,7 @@ Commands are provided as a single JSON argument with the below structure:
   - evoMax = the evolution maximum when the revive chance doesn't increase any more % as a number (integer), i.e. 80 = 80% - equivalent of mod setting "Evolution revive chance maximum %".
   - chanceBase = the revive chance % when at minimum evolution as a number (integer), i.e. 5 = 5% - Equivalent of mod setting "Chance of revive starting %".
   - chancePerEvo = the revive chance % increase per evolution % up to the max evolution limit as a number (integer), i.e. 2 = 2% - equivalent of mod setting "Chance of revive % per evolution %".
-  - chanceFormula = the revival chance formula as a text string. - Equivalent of mod setting "Chance of revive formula".
+  - chanceFormula = the revival chance formula as a text string. - Equivalent of mod setting "Chance of revive formula". NOTE: only the first active command in priority order will set the formula, all others will be ignored. As the concept of adding raw formula togeather or finding the largest formula in a mod wide abstract way dons't make sense. Order is: enforced command, base command, mod setting, add command.
   - delayMin = the revive delay minimum in seconds as a number (integer), i.e. 0 = 0 seconds - equivalent of mod setting "Delay minimum seconds".
   - delayMax = the revive delay maximum in seconds as a number (integer), i.e. 5 = 5 seconds - equivalent of mod setting "Delay maximum seconds".
 - priority = the priority for this command as a text string. Supported values "enforced", "base", "add".
@@ -69,12 +69,17 @@ Example Commands in JSON:
 
 
 
-
 TODO
 ----
+- Corpse tracking for removal. Needs to monitor additional event to populate corpse list. Removal code in place already from POC time.
 
-Mod setting for max revives per unit. Avoid infinitely reviving the same biter every tick.
-Mod setting for zzz (configurable text) floating text over units delayed for reviving when they are delayed for more than 2 (test this looks right) seconds.
+
+IDEAS
+-----
+
+- Mod setting for max revives per unit. Avoid infinitely reviving the same biter every tick. Not needed in commands. Does require getting unit_number of each entity scheduled for revival and tracking forwards in to new unit_number and checking each died entity to tidy up the table if its not chosen for a repeat revival.
+- Mod setting for zzz (configurable text) floating text over units delayed for reviving when they are delayed for more than 2 (test this looks right) seconds.
+- The parsing through commands full data is quite ineffecient, although very natural data structure. If it causes any UPS issues then look at storing command setting values by setting name and priority so that parsing them is very light weight. Will be more complicated code for command creation and removal though.
 
 
 TODO OTHER MODS

@@ -3,22 +3,32 @@ local Events = require("utility/events")
 local Utils = require("utility/utils")
 local Colors = require("utility/colors")
 local Commands = require("utility/commands")
+local EventScheduler = require("utility/event-scheduler")
 
 local UnitsIgnored = {character = "character", compilatron = "compilatron"}
 local DelayGroupingTicks = 15 -- How many ticks between each goup of biters to revive.
 local ForceEvoCacheTicks = 60 -- How long to cache a forces evo for before it is refreshed on next dead unit.
 
-local Command_Attributes = {
+local CommandAttributes = {
     duration = "duration",
     settings = "settings",
     priority = "priority"
 }
-local Command_Priority = {
+---@class CommandPriority
+local CommandPriority = {
     enforced = "enforced",
     base = "base",
     add = "add"
 }
-local Command_SettingNames = {
+---@class CommandPriorityOrderedIndex @ Lower is better.
+local CommandPriorityOrderedIndex = {
+    enforced = 1,
+    base = 2,
+    modSetting = 3,
+    add = 4
+}
+---@class CommandSettingNames
+local CommandSettingNames = {
     evoMin = "evoMin",
     evoMax = "evoMax",
     chanceBase = "chanceBase",
@@ -34,8 +44,7 @@ local Command_SettingNames = {
 ---@field force LuaForce
 ---@field surface LuaSurface
 ---@field position Position
----@field unitNumber UnitNumber -- Used to track the number of times the same unit is revived. -- TODO: needs logic adding for using this.
----@field corpses LuaEntity[] -- TODO: get from a seperate on_post_entity_died event using the unit number to match up.
+---@field corpses LuaEntity[] -- Not populated at present, see Readme task list..
 
 ---@class ForceReviveChanceObject
 ---@field reviveChance double @ Number between 0 and 1.
@@ -44,14 +53,29 @@ local Command_SettingNames = {
 ---@field force LuaForce
 ---@field forceId uint
 
+---@class CommandDetails
+---@field id uint
+---@field duration Tick
+---@field removalTick Tick
+---@field priority CommandPriority
+---@field evoMin double @ Range of 0 to 1.
+---@field evoMax double @ Range of 0 to 1.
+---@field chanceBase double @ Range of 0 to 1.
+---@field chancePerEvo double @ Range of 0 to 1.
+---@field chanceFormula string
+---@field delayMin Tick
+---@field delayMax Tick
+
 BiterRevive.CreateGlobals = function()
     global.reviveQueue = global.reviveQueue or {} ---@type table<Tick, ReviveQueueTickObject[]> @ This will be a sparse table at both the Tick key level and in the array of ReviveQueueTickObjects once they start to be processed.
     global.forcesReviveChance = global.forcesReviveChance or {} ---@type table<Id, ForceReviveChanceObject> @ A table of force indexes and their revival chance data.
+    global.commands = global.commands or {} ---@type table<Id, CommandDetails>
+    global.commandsNextId = global.commandsNextId or 0 ---@type uint
 
     global.evolutionRequirementMin = global.evolutionRequirementMin or 0 ---@type double @ Range of 0 to 1.
     global.evolutionRequirementMax = global.evolutionRequirementMax or 0 ---@type double @ Range of 0 to 1.
     global.reviveChanceBaseValue = global.reviveChanceBaseValue or 0 ---@type double @ Range of 0 to 1.
-    global.reviveChancePerEvoPercentFormula = global.reviveChancePerEvoPercentFormula or "" ---@type string
+    global.reviveChancePerEvoPercentFormula = global.reviveChancePerEvoPercentFormula or "" ---@type string @ expects evolution to be provided as a "evo" variable with number equivilent of the evolution % above min revive evo. i.e. value of 2 for 2%. Defaults to "" rather than nil.
     global.reviveChancePerEvoNumber = global.reviveChancePerEvoPercentNumber or 0 ---@type double @ Range of 0 to 1.
     global.reviveDelayMin = global.reviveDelayMin or 0 ---@type Tick
     global.reviveDelayMax = global.reviveDelayMax or 0 ---@type Tick
@@ -59,7 +83,7 @@ BiterRevive.CreateGlobals = function()
     global.modSettings_evolutionRequirementMin = global.modSettings_evolutionRequirementMin or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_evolutionRequirementMax = global.modSettings_evolutionRequirementMax or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_reviveChanceBaseValue = global.modSettings_reviveChanceBaseValue or 0 ---@type double @ Range of 0 to 1.
-    global.modSettings_reviveChancePerEvoPercentFormula = global.modSettings_reviveChancePerEvoPercentFormula or "" ---@type string @ expects evolution to be provided as a "evo" variable with number equivilent of the evolution % above min revive evo. i.e. value of 2 for 2%.
+    global.modSettings_reviveChancePerEvoPercentFormula = global.modSettings_reviveChancePerEvoPercentFormula or "" ---@type string @ expects evolution to be provided as a "evo" variable with number equivilent of the evolution % above min revive evo. i.e. value of 2 for 2%. Defaults to "" rather than nil.
     global.modSettings_reviveChancePerEvoNumber = global.modSettings_reviveChancePerEvoPercentNumber or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_reviveDelayMin = global.modSettings_reviveDelayMin or 0 ---@type Tick
     global.modSettings_reviveDelayMax = global.modSettings_reviveDelayMax or 0 ---@type Tick
@@ -83,13 +107,12 @@ BiterRevive.OnLoad = function()
     Events.RegisterHandlerEvent(defines.events.on_surface_deleted, "BiterRevive.OnSurfaceRemoved", BiterRevive.OnSurfaceRemoved)
     Events.RegisterHandlerEvent(defines.events.on_surface_cleared, "BiterRevive.OnSurfaceRemoved", BiterRevive.OnSurfaceRemoved)
     Commands.Register("biter_revive_add_modifier", {"command.biter_revive_add_modifier"}, BiterRevive.OnCommand_AddModifier, true)
+    EventScheduler.RegisterScheduledEventType("BiterRevive.Scheduled_RemoveCommand", BiterRevive.Scheduled_RemoveCommand)
 end
 
 ---@param event on_runtime_mod_setting_changed|null
 BiterRevive.OnSettingChanged = function(event)
     -- Event is nil when this is called from OnStartup for a new game or a mod change. In this case we update all settings.
-
-    -- TODO: no need to cache setting values themselves, just run the function to work out the current value as if RCON has over ruled the value that is what goes in to global until RCON command expires and then that will trigger its own update to globals.
 
     -- These settings need processing to establish the current value as RCON commands can affect the final value in global.
     if event == nil or event.setting == "biter_revive-evolution_percent_minimum" then
@@ -242,7 +265,6 @@ BiterRevive.OnEntityDied = function(event)
         forceId = unitsForce_index,
         surface = entity.surface,
         position = entity.position,
-        unitNumber = entity.unit_number,
         corpses = nil -- Populated by a later event.
     }
 
@@ -417,20 +439,137 @@ BiterRevive.GetValdiatedFormulaString = function(formulaStringToTest)
     end
 end
 
--- TODO: updating the global values when mod settings are changed or RCON commands recieved.
+--- Call the approperiate update functions for the runtime globals based on which fields were included in the command details.
+---@param commandDetails CommandDetails
+BiterRevive.CallUpdateFunctionsForCommandDetails = function(commandDetails)
+    if commandDetails.evoMin ~= nil then
+        BiterRevive.CalculateCurrentEvolutionMinimum()
+    end
+    if commandDetails.evoMax ~= nil then
+        BiterRevive.CalculateCurrentEvolutionMaximum()
+    end
+    if commandDetails.chanceBase ~= nil then
+        BiterRevive.CalculateCurrentChanceBase()
+    end
+    if commandDetails.chancePerEvo ~= nil then
+        BiterRevive.CalculateCurrentChancePerEvolution()
+    end
+    if commandDetails.chanceFormula ~= nil then
+        BiterRevive.CalculateCurrentChanceFormula()
+    end
+    if commandDetails.delayMin ~= nil then
+        BiterRevive.CalculateCurrentDelayMinimum()
+    end
+    if commandDetails.delayMax ~= nil then
+        BiterRevive.CalculateCurrentDelayMaximum()
+    end
+end
+
+---------------------------------------------------------------------------------------------------------------------------
+--      These Calculate functions aren't very effecient, but they will run very infrequently over small data sets.       --
+---------------------------------------------------------------------------------------------------------------------------
 BiterRevive.CalculateCurrentEvolutionMinimum = function()
+    global.evolutionRequirementMin = BiterRevive.CalculateCurrentValue(CommandSettingNames.evoMin, "min", "modSettings_evolutionRequirementMin")
 end
 BiterRevive.CalculateCurrentEvolutionMaximum = function()
+    global.evolutionRequirementMax = BiterRevive.CalculateCurrentValue(CommandSettingNames.evoMax, "max", "modSettings_evolutionRequirementMax")
 end
 BiterRevive.CalculateCurrentChanceBase = function()
+    global.reviveChanceBaseValue = BiterRevive.CalculateCurrentValue(CommandSettingNames.chanceBase, "max", "modSettings_reviveChanceBaseValue")
 end
 BiterRevive.CalculateCurrentChancePerEvolution = function()
+    global.reviveChancePerEvoNumber = BiterRevive.CalculateCurrentValue(CommandSettingNames.chancePerEvo, "max", "modSettings_reviveChancePerEvoNumber")
 end
 BiterRevive.CalculateCurrentChanceFormula = function()
+    -- Is special in that we record the first highest priority formula we find and use that.
+    local currentFormula  ---@type string
+    local currentFormulaPriorityOrderedIndex = 10 ---@type CommandPriorityOrderedIndex
+    for _, command in pairs(global.commands) do
+        -- Will be a non existant setting in the command and not an empty string like the mod setting.
+        if command[CommandSettingNames.chanceFormula] ~= nil then
+            local commandPriorityOrderedIndex = CommandPriorityOrderedIndex[command.priority]
+            if commandPriorityOrderedIndex < currentFormulaPriorityOrderedIndex then
+                currentFormula = command.chanceFormula
+                if commandPriorityOrderedIndex == 1 then
+                    -- Nothing can be higher priority and we use the first one found of a priority.
+                    break
+                end
+            end
+        end
+    end
+
+    -- Check if the mod setting should set the formula over an "add" command. The mod setting is stored as an empty string and not nil as its a global.
+    if currentFormulaPriorityOrderedIndex > CommandPriorityOrderedIndex.modSetting and global.modSettings_reviveChancePerEvoPercentFormula ~= "" then
+        currentFormula = global.modSettings_reviveChancePerEvoPercentFormula
+    end
+
+    global.reviveChancePerEvoPercentFormula = currentFormula
 end
 BiterRevive.CalculateCurrentDelayMinimum = function()
+    global.reviveDelayMin = BiterRevive.CalculateCurrentValue(CommandSettingNames.delayMin, "min", "modSettings_reviveDelayMin")
 end
 BiterRevive.CalculateCurrentDelayMaximum = function()
+    global.reviveDelayMax = BiterRevive.CalculateCurrentValue(CommandSettingNames.delayMax, "max", "modSettings_reviveDelayMax")
+end
+--- Generic processing of settings.
+---@param settingName CommandSettingNames
+---@param minOrMax "'min'"|"'max'" @ If this uses the min or max value for multiple enforce or base priority commands.
+---@param modSettingCacheName string @ The global cache value of the mod setting for use if no enforced or base commands.
+---@return number currentValue
+BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCacheName)
+    local currentValue
+
+    -- Sort the active commands in to their priority types for this setting.
+    local commandsForSetting = {enforced = {}, base = {}, add = {}}
+    for _, command in pairs(global.commands) do
+        if command[settingName] ~= nil then
+            table.insert(commandsForSetting[command.priority], command[settingName])
+        end
+    end
+
+    if #commandsForSetting.enforced > 0 then
+        -- Theres some "enforced" commands so use these to set the value permenantly.
+        if #commandsForSetting.enforced == 1 then
+            -- Just 1 command so set the value.
+            currentValue = commandsForSetting.enforced[1]
+        else
+            -- Multiple commands so get the lowest/highest based on setting type.
+            for _, value in pairs(commandsForSetting.enforced) do
+                if minOrMax == "min" and value < currentValue then
+                    currentValue = value
+                elseif minOrMax == "max" and value > currentValue then
+                    currentValue = value
+                end
+            end
+        end
+        -- No more processing required if theres an "enforced" priority command.
+        return currentValue
+    elseif #commandsForSetting.base > 0 then
+        -- Theres some "base" commands so use these to set the initial value.
+        if #commandsForSetting.base == 1 then
+            -- Just 1 command so set the value.
+            currentValue = commandsForSetting.base[1]
+        else
+            -- Multiple commands so get the lowest/highest based on setting type.
+            for _, value in pairs(commandsForSetting.base) do
+                if minOrMax == "min" and value < currentValue then
+                    currentValue = value
+                elseif minOrMax == "max" and value > currentValue then
+                    currentValue = value
+                end
+            end
+        end
+    elseif #commandsForSetting.base == 0 then
+        -- No "base" commands so use the mod setting for the initial value.
+        currentValue = global[modSettingCacheName]
+    end
+
+    -- Apply any "add" commands
+    for _, value in pairs(commandsForSetting.add) do
+        currentValue = currentValue + value
+    end
+
+    return currentValue
 end
 
 --- Handler of the RCON command "biter_revive_add_modifier".
@@ -441,71 +580,116 @@ BiterRevive.OnCommand_AddModifier = function(command)
 
     -- Check the top level JSON object table.
     local data = args[1]
-    if not Commands.ParseTableArgument(data, true, command.name, "Json object", Command_Attributes) then
+    if not Commands.ParseTableArgument(data, true, command.name, "Json object", CommandAttributes) then
         return
     end
 
     -- Check the main attributes of the object.
-    local duration = data.duration
-    if not Commands.ParseNumberArgument(duration, "integer", true, command.name, "duration", 0) then
+    ---@type Second
+    local durationSeconds = data.duration
+    if not Commands.ParseNumberArgument(durationSeconds, "integer", true, command.name, "duration", 0) then
         return
     end
 
+    ---@type CommandPriority
     local priority = data.priority
-    if not Commands.ParseStringArgument(priority, true, command.name, "priority", Command_Priority) then
+    if not Commands.ParseStringArgument(priority, true, command.name, "priority", CommandPriority) then
         return
     end
 
     local settings = data.settings
-    if not Commands.ParseTableArgument(settings, true, command.name, settings, Command_SettingNames) then
+    if not Commands.ParseTableArgument(settings, true, command.name, settings, CommandSettingNames) then
         return
     end
 
     -- Check the settings specific fields in the object. Note that none of the settings force value ranges.
-    local evoMin = settings.evoMin
-    if not Commands.ParseNumberArgument(evoMin, "integer", false, command.name, "evoMin") then
+    ---@type uint
+    local evoMinPercent = settings.evoMin
+    if not Commands.ParseNumberArgument(evoMinPercent, "integer", false, command.name, "evoMin") then
         return
     end
 
-    local evoMax = settings.evoMax
-    if not Commands.ParseNumberArgument(evoMax, "integer", false, command.name, "evoMax") then
+    ---@type uint
+    local evoMaxPercent = settings.evoMax
+    if not Commands.ParseNumberArgument(evoMaxPercent, "integer", false, command.name, "evoMax") then
         return
     end
 
-    local chanceBase = settings.chanceBase
-    if not Commands.ParseNumberArgument(chanceBase, "integer", false, command.name, "chanceBase") then
+    ---@type uint
+    local chanceBasePercent = settings.chanceBase
+    if not Commands.ParseNumberArgument(chanceBasePercent, "integer", false, command.name, "chanceBase") then
         return
     end
 
-    local chancePerEvo = settings.chancePerEvo
-    if not Commands.ParseNumberArgument(chancePerEvo, "integer", false, command.name, "chancePerEvo") then
+    ---@type uint
+    local chancePerEvoPercent = settings.chancePerEvo
+    if not Commands.ParseNumberArgument(chancePerEvoPercent, "integer", false, command.name, "chancePerEvo") then
         return
     end
 
+    ---@type string
     local chanceFormula = settings.chanceFormula
     if not Commands.ParseStringArgument(chanceFormula, "string", false, command.name, "chanceFormula") then
         return
     end
+    -- Set the formula blank string to nil as its more logical to check commands with it as optional setting that way. People may enter it as a blank string as thats what the mod setting requires. The global cached mod setting uses a blank string and not nil however.
+    if chanceFormula ~= nil and chanceFormula == "" then
+        chanceFormula = nil
+    end
 
-    local delayMin = settings.delayMin
-    if not Commands.ParseNumberArgument(delayMin, "integer", false, command.name, "delayMin") then
+    ---@type Second
+    local delayMinSeconds = settings.delayMin
+    if not Commands.ParseNumberArgument(delayMinSeconds, "integer", false, command.name, "delayMin") then
         return
     end
 
-    local delayMax = settings.delayMax
-    if not Commands.ParseNumberArgument(delayMax, "integer", false, command.name, "delayMax") then
+    ---@type Second
+    local delayMaxSeconds = settings.delayMax
+    if not Commands.ParseNumberArgument(delayMaxSeconds, "integer", false, command.name, "delayMax") then
         return
     end
 
     -- Check that one or more settings where included, otherwise the command will do nothing.
-    if evoMin == nil and evoMax == nil and chanceBase == nil and chancePerEvo == nil and chanceFormula == nil and delayMin == nil and delayMax == nil then
+    if evoMinPercent == nil and evoMaxPercent == nil and chanceBasePercent == nil and chancePerEvoPercent == nil and chanceFormula == nil and delayMinSeconds == nil and delayMaxSeconds == nil then
         game.print(errorMessageStart .. "no actual setting was included within the settings table.")
         return
     end
 
-    -- TODO: add comamnd results in to commands table
-    -- TODO: schedule removal from commands table at duration.
-    -- TODO: force update of current runtime values.
+    -- Add command results in to commands table.
+    global.commandsNextId = global.commandsNextId + 1
+    ---@type CommandDetails
+    local commandDetails = {
+        id = global.commandsNextId,
+        duration = durationSeconds * 60,
+        removalTick = command.tick + (durationSeconds * 60),
+        priority = priority,
+        evoMin = evoMinPercent / 100,
+        evoMax = evoMaxPercent / 100,
+        chanceBase = chanceBasePercent / 100,
+        chancePerEvo = chancePerEvoPercent / 100,
+        chanceFormula = chanceFormula,
+        delayMin = delayMinSeconds * 60,
+        delayMax = delayMaxSeconds * 60
+    }
+    global.commands[commandDetails.id] = commandDetails
+
+    -- Schedule removal from commands table at end of duration.
+    EventScheduler.ScheduleEventOnce(commandDetails.removalTick, "BiterRevive.Scheduled_RemoveCommand", commandDetails.id)
+
+    BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetails)
+end
+
+--- Scheduled to remove a command form the commands list.
+---@param event UtilityScheduledEvent_CallbackObject
+BiterRevive.Scheduled_RemoveCommand = function(event)
+    local commandDetailsToRemove = global.commands[event.instanceId]
+    if commandDetailsToRemove == nil then
+        -- Command already remvoed by something else so nothing further to do.
+        return
+    end
+
+    global.commands[event.instanceId] = nil
+    BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetailsToRemove)
 end
 
 return BiterRevive
