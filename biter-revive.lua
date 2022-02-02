@@ -5,9 +5,8 @@ local Colors = require("utility/colors")
 local Commands = require("utility/commands")
 local EventScheduler = require("utility/event-scheduler")
 
-local UnitsIgnored = {character = "character", compilatron = "compilatron"}
 local DelayGroupingTicks = 15 -- How many ticks between each goup of biters to revive.
-local ForceEvoCacheTicks = 60 -- How long to cache a forces evo for before it is refreshed on next dead unit.
+local ForceEvoCacheTicks = 60 -- How long to cache a forces evo for before it is refreshed on next dead unit. Currently 1 second as then it updates frequently after commands and settings are changed on its own. I wonder if I intended for it to be 1 minute, but no real load in its processing so.
 
 local CommandAttributes = {
     duration = "duration",
@@ -44,11 +43,9 @@ local CommandSettingNames = {
 ---@field force LuaForce
 ---@field surface LuaSurface
 ---@field position Position
----@field corpses LuaEntity[] -- Not populated at present, see Readme task list..
 
 ---@class ForceReviveChanceObject
 ---@field reviveChance double @ Number between 0 and 1.
----@field oldEvolution double @ Number between 0 and 1.
 ---@field lastCheckedTick Tick
 ---@field force LuaForce
 ---@field forceId uint
@@ -61,10 +58,10 @@ local CommandSettingNames = {
 ---@field evoMin double @ Range of 0 to 1.
 ---@field evoMax double @ Range of 0 to 1.
 ---@field chanceBase double @ Range of 0 to 1.
----@field chancePerEvo double @ Range of 0 to 1.
+---@field chancePerEvo double @ Range of 0 to 100.
 ---@field chanceFormula string
----@field delayMin Tick
----@field delayMax Tick
+---@field delayMin Tick @ Range of >= 0.
+---@field delayMax Tick @ Range of >= 0.
 
 BiterRevive.CreateGlobals = function()
     global.reviveQueue = global.reviveQueue or {} ---@type table<Tick, ReviveQueueTickObject[]> @ This will be a sparse table at both the Tick key level and in the array of ReviveQueueTickObjects once they start to be processed.
@@ -76,17 +73,17 @@ BiterRevive.CreateGlobals = function()
     global.evolutionRequirementMax = global.evolutionRequirementMax or 0 ---@type double @ Range of 0 to 1.
     global.reviveChanceBaseValue = global.reviveChanceBaseValue or 0 ---@type double @ Range of 0 to 1.
     global.reviveChancePerEvoPercentFormula = global.reviveChancePerEvoPercentFormula or "" ---@type string @ expects evolution to be provided as a "evo" variable with number equivilent of the evolution % above min revive evo. i.e. value of 2 for 2%. Defaults to "" rather than nil.
-    global.reviveChancePerEvoNumber = global.reviveChancePerEvoPercentNumber or 0 ---@type double @ Range of 0 to 1.
-    global.reviveDelayMin = global.reviveDelayMin or 0 ---@type Tick
-    global.reviveDelayMax = global.reviveDelayMax or 0 ---@type Tick
+    global.reviveChancePerEvoNumber = global.reviveChancePerEvoNumber or 0 ---@type double @ Range of 0 to 100.
+    global.reviveDelayMin = global.reviveDelayMin or 0 ---@type Tick @ Range of >= 0.
+    global.reviveDelayMax = global.reviveDelayMax or 0 ---@type Tick @ Range of >= 0.
 
     global.modSettings_evolutionRequirementMin = global.modSettings_evolutionRequirementMin or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_evolutionRequirementMax = global.modSettings_evolutionRequirementMax or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_reviveChanceBaseValue = global.modSettings_reviveChanceBaseValue or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_reviveChancePerEvoPercentFormula = global.modSettings_reviveChancePerEvoPercentFormula or "" ---@type string @ expects evolution to be provided as a "evo" variable with number equivilent of the evolution % above min revive evo. i.e. value of 2 for 2%. Defaults to "" rather than nil.
-    global.modSettings_reviveChancePerEvoNumber = global.modSettings_reviveChancePerEvoPercentNumber or 0 ---@type double @ Range of 0 to 1.
-    global.modSettings_reviveDelayMin = global.modSettings_reviveDelayMin or 0 ---@type Tick
-    global.modSettings_reviveDelayMax = global.modSettings_reviveDelayMax or 0 ---@type Tick
+    global.modSettings_reviveChancePerEvo = global.modSettings_reviveChancePerEvo or 0 ---@type double @ Range of 0 to 100.
+    global.modSettings_reviveDelayMin = global.modSettings_reviveDelayMin or 0 ---@type Tick @ Range of >= 0.
+    global.modSettings_reviveDelayMax = global.modSettings_reviveDelayMax or 0 ---@type Tick @ Range of >= 0.
 
     global.blacklistedPrototypeNames = global.blacklistedPrototypeNames or {} ---@type table<string, True> @ The key and value are both the blacklisted prototype name.
     global.raw_BlacklistedPrototypeNames = global.raw_BlacklistedPrototypeNames or "" ---@type string @ The raw setting value.
@@ -132,7 +129,7 @@ BiterRevive.OnSettingChanged = function(event)
     end
     if event == nil or event.setting == "biter_revive-chance_percent_per_evolution_percent" then
         local settingValue = settings.global["biter_revive-chance_percent_per_evolution_percent"].value
-        global.modSettings_reviveChancePerEvoPercentNumber = settingValue / 100
+        global.modSettings_reviveChancePerEvo = settingValue
         BiterRevive.CalculateCurrentChancePerEvolution()
     end
     if event == nil or event.setting == "biter_revive-chance_formula" then
@@ -169,8 +166,10 @@ BiterRevive.OnSettingChanged = function(event)
     -- These settings just need caching as can't be overridden by RCON command.
     if event == nil or event.setting == "biter_revive-revives_per_second" then
         local settingValue = settings.global["biter_revive-revives_per_second"].value
-        global.revivesPerCycle = math.floor(settingValue / DelayGroupingTicks)
-        global.revivesPerCycleOnStartOfSecond = math.floor(settingValue / DelayGroupingTicks) + settingValue % DelayGroupingTicks
+        -- Make the revivesPerCycle be a round part of the total, with the nStartOfSecond having the left over odd count.
+        local groupsPerSecond = math.floor(60 / DelayGroupingTicks)
+        global.revivesPerCycle = math.floor(settingValue / groupsPerSecond)
+        global.revivesPerCycleOnStartOfSecond = global.revivesPerCycle + (settingValue - (global.revivesPerCycle * groupsPerSecond))
     -- Nothing needs processing for this.
     end
     if event == nil or event.setting == "biter_revive-blacklisted_prototype_names" then
@@ -224,7 +223,7 @@ BiterRevive.OnEntityDied = function(event)
     end
 
     local entity_name = entity.name
-    if UnitsIgnored[entity_name] ~= nil or global.blacklistedPrototypeNames[entity_name] ~= nil then
+    if global.blacklistedPrototypeNames[entity_name] ~= nil then
         return
     end
 
@@ -238,8 +237,8 @@ BiterRevive.OnEntityDied = function(event)
     -- Get the revive chance data and update it if its too old. Cache valid for 1 minute. This data will be instantly replaced by RCON commands, but they will be rare compared to needing to track forces evo changes over time.
     local forceReviveChanceObject = global.forcesReviveChance[unitsForce_index]
     if forceReviveChanceObject == nil then
-        -- Create the biter force as it doesn't exist. The negative lastCheckedTick will ensure it is updated on first use,
-        global.forcesReviveChance[unitsForce_index] = {force = unitsForce, forceId = unitsForce_index, lastCheckedTick = -200, oldEvolution = nil, reviveChance = nil}
+        -- Create the biter force as it doesn't exist. The large negative lastCheckedTick will ensure it is updated on first use.
+        global.forcesReviveChance[unitsForce_index] = {force = unitsForce, forceId = unitsForce_index, lastCheckedTick = -2000, reviveChance = nil}
         forceReviveChanceObject = global.forcesReviveChance[unitsForce_index]
     end
     if forceReviveChanceObject.lastCheckedTick < event.tick - ForceEvoCacheTicks then
@@ -264,13 +263,12 @@ BiterRevive.OnEntityDied = function(event)
         force = unitsForce,
         forceId = unitsForce_index,
         surface = entity.surface,
-        position = entity.position,
-        corpses = nil -- Populated by a later event.
+        position = entity.position
     }
 
     -- Work out how much delay this will have and what grouping tick it should go in to.
     local delay = math.random(global.reviveDelayMin, global.reviveDelayMax)
-    local delayGroupingTick = (math.floor(event.tick / DelayGroupingTicks) + 1 + delay) * DelayGroupingTicks -- At a minimum this will be the next grouping if the delayGrouping is 0.
+    local delayGroupingTick = (math.floor((event.tick + delay) / DelayGroupingTicks) + 1) * DelayGroupingTicks -- At a minimum this will be the next grouping if the delayGrouping is 0.
 
     -- Add to queue in the correct grouping tick
     local tickQueue = global.reviveQueue[delayGroupingTick]
@@ -281,55 +279,58 @@ BiterRevive.OnEntityDied = function(event)
     table.insert(tickQueue, reviveDetails)
 end
 
---- Update the reviveChacneObject as required. Always updates the lastCheckedTick when run.
+--- Update the reviveChanceObject as required. Always updates the lastCheckedTick when run.
 ---@param forceReviveChanceObject ForceReviveChanceObject
 ---@param currentTick Tick
 BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
+    -- The current evo will have changed every time run so always recalculate this data.
     local currentForceEvo = forceReviveChanceObject.force.evolution_factor
-    if currentForceEvo ~= forceReviveChanceObject.oldEvolution then
-        -- Evolution has changed so update the chance data.
-        if currentForceEvo >= global.evolutionRequirementMin then
-            -- Current evo is >= min required so work out approperaite revive chance.
-            local forceEvoAboveMin = currentForceEvo - global.evolutionRequirementMin
+    if currentForceEvo >= global.evolutionRequirementMin then
+        -- Current evo is >= min required so work out approperaite revive chance.
+        local forceEvoAboveMin = currentForceEvo - global.evolutionRequirementMin
 
-            local chanceForEvo
+        local chanceForEvo
 
-            -- If the chance per evo formula is blank then use the number setting, otherwise we use the formula.
-            if global.reviveChancePerEvoPercentFormula ~= "" then
-                -- Formula is blank so use the number
-                chanceForEvo = forceEvoAboveMin * global.reviveChancePerEvoNumber
-            else
-                -- Try and apply the current formula to the evo.
-                local success
-                success, chanceForEvo =
-                    pcall(
-                    function()
-                        return load("local evo = " .. forceEvoAboveMin .. "; return " .. global.reviveChancePerEvoPercentFormula)()
-                    end
-                )
+        -- If the chance per evo formula is blank then use the number setting, otherwise we use the formula.
+        if global.reviveChancePerEvoPercentFormula ~= "" then
+            -- Formula is blank so use the number
+            chanceForEvo = forceEvoAboveMin * global.reviveChancePerEvoNumber
+        else
+            -- It expects evo to be as a percentage
+            forceEvoAboveMin = forceEvoAboveMin * 100
 
-                if not success then
-                    game.print("Revive chance formula failed when being applied with 'evo' value of: " .. forceEvoAboveMin)
-                    chanceForEvo = 0
+            -- Try and apply the current formula to the evo.
+            local success
+            success, chanceForEvo =
+                pcall(
+                function()
+                    return load("local evo = " .. forceEvoAboveMin .. "; return " .. global.reviveChancePerEvoPercentFormula)()
                 end
-            end
+            )
 
-            -- Check the value isn't a NaN.
-            if chanceForEvo ~= chanceForEvo then
-                -- reviveChance is NaN so set it to 0.
-                game.print("Revive chance result ended up as invalid number, error in mod setting value. The 'evo' above minimum was: " .. forceEvoAboveMin)
+            if not success then
+                game.print("Revive chance formula failed when being applied with 'evo' value of: " .. forceEvoAboveMin)
                 chanceForEvo = 0
             end
-
-            -- Current chance is the min chance plus the proportional chance from evo scale.
-            local reviveChance = global.reviveChanceBaseValue + chanceForEvo
-            -- Clamp the chance result between 0 and 1.
-            forceReviveChanceObject.reviveChance = math.min(math.max(reviveChance, 0), 1)
-        else
-            -- Below min so no chance
-            forceReviveChanceObject.reviveChance = 0
         end
+
+        -- Check the value isn't a NaN.
+        if chanceForEvo ~= chanceForEvo then
+            -- reviveChance is NaN so set it to 0.
+            game.print("Revive chance result ended up as invalid number, error in mod setting value. The 'evo' above minimum was: " .. forceEvoAboveMin)
+            chanceForEvo = 0
+        end
+
+        -- Current chance is the min chance plus the proportional chance from evo scale.
+        local reviveChance = global.reviveChanceBaseValue + chanceForEvo
+        -- Clamp the chance result between 0 and 1.
+        forceReviveChanceObject.reviveChance = math.min(math.max(reviveChance, 0), 1)
+    else
+        -- Below min so no chance
+        forceReviveChanceObject.reviveChance = 0
     end
+
+    -- Update the last tick checked.
     forceReviveChanceObject.lastCheckedTick = currentTick
 end
 
@@ -352,8 +353,8 @@ BiterRevive.ProcessQueue = function(event)
     -- Start at the beginning (oldest) of the queued revive Ticks and work forwards until we reach a future tick from now, or we do our max revives this cycle.
     local spawnPosition
     for tick, reviveQueueTickObjects in pairs(global.reviveQueue) do
-        if tick > event.tick then
-            -- Done all we should so stop.
+        if event.tick < tick then
+            -- Not got this far in time yet.
             return
         end
 
@@ -371,13 +372,6 @@ BiterRevive.ProcessQueue = function(event)
                     create_build_effect_smoke = false,
                     raise_built = true
                 }
-
-                -- Remove any corpses as the unit isn't dead any more.
-                if reviveDetails.corpses ~= nil then
-                    for _, corpse in pairs(reviveDetails.corpses) do
-                        corpse.destroy {raise_destroy = true}
-                    end
-                end
             end
 
             -- Remove this revive from the current tick as done.
@@ -392,6 +386,7 @@ BiterRevive.ProcessQueue = function(event)
 
         -- If reached here then this tick's revives are all complete so remove it.
         global.reviveQueue[tick] = nil
+        --TODO: this breaks the looping as invalid key to next() in pairs. But the inner having its key set to nil was happy :S
     end
 end
 
@@ -478,7 +473,7 @@ BiterRevive.CalculateCurrentChanceBase = function()
     global.reviveChanceBaseValue = BiterRevive.CalculateCurrentValue(CommandSettingNames.chanceBase, "max", "modSettings_reviveChanceBaseValue")
 end
 BiterRevive.CalculateCurrentChancePerEvolution = function()
-    global.reviveChancePerEvoNumber = BiterRevive.CalculateCurrentValue(CommandSettingNames.chancePerEvo, "max", "modSettings_reviveChancePerEvoNumber")
+    global.reviveChancePerEvoNumber = BiterRevive.CalculateCurrentValue(CommandSettingNames.chancePerEvo, "max", "modSettings_reviveChancePerEvo")
 end
 BiterRevive.CalculateCurrentChanceFormula = function()
     -- Is special in that we record the first highest priority formula we find and use that.
@@ -666,7 +661,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
         evoMin = evoMinPercent / 100,
         evoMax = evoMaxPercent / 100,
         chanceBase = chanceBasePercent / 100,
-        chancePerEvo = chancePerEvoPercent / 100,
+        chancePerEvo = chancePerEvoPercent,
         chanceFormula = chanceFormula,
         delayMin = delayMinSeconds * 60,
         delayMax = delayMaxSeconds * 60

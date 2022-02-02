@@ -2,7 +2,7 @@
 
 local Commands = {}
 local Utils = require("utility/utils")
-local Constants = require("utility/constants")
+local Constants = require("constants")
 
 --- Register a function to be triggered when a command is run. Includes support to restrict usage to admins.
 --- Call from OnLoad and will remove any existing identically named command so no risk of double registering error.

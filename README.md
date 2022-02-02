@@ -10,7 +10,7 @@ Notes
 -----
 
 - Any "unit" entity that breathes air is included in the revive logic by default. This will include all vanilla Factorio biters and I assume most modded enemies as well.
-- At present the player's character and compilatron prototypes are always excluded from reviving. There is also a mod setting to add additional prototype names for exclusion.
+- There is a mod setting to exclude prototype names from ever reviving, with the player's character and compilatron included by default. There is also a mod setting to exclude specific force's from ever reviving.
 - Revive chance is a scale based on configurable settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
 - Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dieing.
 - Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the biter dies, but instead a fraction of a second later.
@@ -48,13 +48,13 @@ When the mod is evaluating command and mod settings to identify the current runt
 Commands are provided as a single JSON argument with the below structure:
 - duration = number of seconds the command will be active for (integer).
 - settings = a table (dictionary) of setting name (string) and value (integer). The setting names supported are:
-  - evoMin = the evolution minimum required for reviving to start % as a number (integer), i.e. 50 = 50% - equivalent of mod setting "Evolution revive chance minimum %".
-  - evoMax = the evolution maximum when the revive chance doesn't increase any more % as a number (integer), i.e. 80 = 80% - equivalent of mod setting "Evolution revive chance maximum %".
-  - chanceBase = the revive chance % when at minimum evolution as a number (integer), i.e. 5 = 5% - Equivalent of mod setting "Chance of revive starting %".
+  - evoMin = the evolution minimum required for reviving to start % as a number (integer), i.e. 50 = 50% - equivalent of mod setting "Evolution % minimum for reviving".
+  - evoMax = the evolution maximum when the revive chance doesn't increase any more % as a number (integer), i.e. 80 = 80% - equivalent of mod setting "Evolution % for maximum reviving chance".
+  - chanceBase = the revive chance % when at minimum evolution as a number (integer), i.e. 5 = 5% - Equivalent of mod setting "Chance of revival starting %".
   - chancePerEvo = the revive chance % increase per evolution % up to the max evolution limit as a number (integer), i.e. 2 = 2% - equivalent of mod setting "Chance of revive % per evolution %".
   - chanceFormula = the revival chance formula as a text string. - Equivalent of mod setting "Chance of revive formula". NOTE: only the first active command in priority order will set the formula, all others will be ignored. As the concept of adding raw formula togeather or finding the largest formula in a mod wide abstract way dons't make sense. Order is: enforced command, base command, mod setting, add command.
-  - delayMin = the revive delay minimum in seconds as a number (integer), i.e. 0 = 0 seconds - equivalent of mod setting "Delay minimum seconds".
-  - delayMax = the revive delay maximum in seconds as a number (integer), i.e. 5 = 5 seconds - equivalent of mod setting "Delay maximum seconds".
+  - delayMin = the revive delay minimum in seconds as a number (integer), i.e. 0 = 0 seconds - equivalent of mod setting "Revive delay minimum seconds".
+  - delayMax = the revive delay maximum in seconds as a number (integer), i.e. 5 = 5 seconds - equivalent of mod setting "Revive delay maximum seconds".
 - priority = the priority for this command as a text string. Supported values "enforced", "base", "add".
 
 Example Commands in JSON:
@@ -67,25 +67,17 @@ Example Commands in JSON:
 
 
 
-
-
-TODO
-----
-- Corpse tracking for removal. Needs to monitor additional event to populate corpse list. Removal code in place already from POC time.
-
-
-IDEAS
------
+Future Ideas
+------------
 
 - Mod setting for max revives per unit. Avoid infinitely reviving the same biter every tick. Not needed in commands. Does require getting unit_number of each entity scheduled for revival and tracking forwards in to new unit_number and checking each died entity to tidy up the table if its not chosen for a repeat revival.
 - Mod setting for zzz (configurable text) floating text over units delayed for reviving when they are delayed for more than 2 (test this looks right) seconds.
 - The parsing through commands full data is quite ineffecient, although very natural data structure. If it causes any UPS issues then look at storing command setting values by setting name and priority so that parsing them is very light weight. Will be more complicated code for command creation and removal though.
+- Track biters marked for reviving's corpses so we can remove them when the biter revives. Would need to monitor additional event to populate corpse list and link the 2 events togeather.
 
 
-TODO OTHER MODS
----------------
 
-Add timer/clock to the text display mod so it can be used with time limited abilities via rcon on screen nicely.
-Muppet GUI needs a check on old pc between committed and local files. As on the new machine weird doubling up of all folders had occurred. i.e. scripts (1) and notes (1). The doubling up notes TODO had different contents.
+TODO
+----
 
 Push the updated Utils from this mod back in Utils Git and apply to the railway tunnel mod.
