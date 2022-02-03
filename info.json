@@ -1,0 +1,13 @@
+{
+    "name": "biter_revive",
+    "version": "1.1.0",
+    "title": "Biter Revive",
+    "author": "Muppet9010",
+    "contact": "",
+    "homepage": "https://mods.factorio.com/mod/biter_revive",
+    "factorio_version": "1.1",
+    "dependencies": [
+        "base >= 1.1"
+    ],
+    "description": "A mod that revives biters and supports RCON commands changing settings for streamer chat integrations."
+}
