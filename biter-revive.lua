@@ -65,6 +65,7 @@ local CommandSettingNames = {
 
 BiterRevive.CreateGlobals = function()
     global.reviveQueue = global.reviveQueue or {} ---@type table<Tick, ReviveQueueTickObject[]> @ This will be a sparse table at both the Tick key level and in the array of ReviveQueueTickObjects once they start to be processed.
+    global.reviveQueueNextTickToProcess = global.reviveQueueNextTickToProcess or 0 ---@type Tick @ The next tick in the queue that will be processed.
     global.forcesReviveChance = global.forcesReviveChance or {} ---@type table<Id, ForceReviveChanceObject> @ A table of force indexes and their revival chance data.
     global.commands = global.commands or {} ---@type table<Id, CommandDetails>
     global.commandsNextId = global.commandsNextId or 0 ---@type uint
@@ -350,43 +351,71 @@ BiterRevive.ProcessQueue = function(event)
         revivesRemainingThisCycle = global.revivesPerCycle
     end
 
-    -- Start at the beginning (oldest) of the queued revive Ticks and work forwards until we reach a future tick from now, or we do our max revives this cycle.
-    local spawnPosition
-    for tick, reviveQueueTickObjects in pairs(global.reviveQueue) do
-        if event.tick < tick then
-            -- Not got this far in time yet.
-            return
-        end
+    -- If very low revives per second mod setting then it can be 0 max revives in some cycles.
+    if revivesRemainingThisCycle == 0 then
+        return
+    end
 
-        for reviveIndex, reviveDetails in pairs(reviveQueueTickObjects) do
-            -- We handle surface's being deleted and forces merged via events so no need to check them per execution here.
+    -- Check each group's tick for any entries we need to process. In general it will just be 1 tick groups worth, but if there are more revivies than max allowed then it may have to check multiple tick groups until it has caught up.
+    -- As dictionary keys aren't sorted and this is a sparse array of tick keys they won't be in sequential order when new ones are added.
+    local spawnPosition, nextTickToProcess
+    local reviveQueueTickObjects  ---@type ReviveQueueTickObject[]
+    for groupTick = global.reviveQueueNextTickToProcess, event.tick, DelayGroupingTicks do
+        reviveQueueTickObjects = global.reviveQueue[groupTick]
+        if reviveQueueTickObjects ~= nil then
+            for reviveIndex, reviveDetails in pairs(reviveQueueTickObjects) do
+                -- We handle surface's being deleted and forces merged via events so no need to check them per execution here.
 
-            -- Do the actual revive asuming a suitable position is found.
-            spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 5, 0.1)
-            if spawnPosition ~= nil then
-                reviveDetails.surface.create_entity {
-                    name = reviveDetails.prototypeName,
-                    position = spawnPosition,
-                    force = reviveDetails.force,
-                    orientation = reviveDetails.orientation,
-                    create_build_effect_smoke = false,
-                    raise_built = true
-                }
+                -- Do the actual revive asuming a suitable position is found.
+                spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 5, 0.1)
+                if spawnPosition ~= nil then
+                    reviveDetails.surface.create_entity {
+                        name = reviveDetails.prototypeName,
+                        position = spawnPosition,
+                        force = reviveDetails.force,
+                        orientation = reviveDetails.orientation,
+                        create_build_effect_smoke = false,
+                        raise_built = true
+                    }
+                end
+
+                -- Remove this revive from the current tick as done.
+                reviveQueueTickObjects[reviveIndex] = nil
+
+                -- Count our revive and stop processing if we have done our number for this cycle.
+                revivesRemainingThisCycle = revivesRemainingThisCycle - 1
+                if revivesRemainingThisCycle == 0 then
+                    -- Cache the current tick as last completed.
+                    if #reviveQueueTickObjects == 0 then
+                        -- Ths tick was actually just all done on the last allowed revived.
+                        nextTickToProcess = groupTick + DelayGroupingTicks
+                    else
+                        -- More revivies this tick to be done, so we need to continue this tick next cycle.
+                        nextTickToProcess = groupTick
+                    end
+                    break
+                end
             end
 
-            -- Remove this revive from the current tick as done.
-            reviveQueueTickObjects[reviveIndex] = nil
+            -- Remove the tick's queue entry if its all completed.
+            if #reviveQueueTickObjects == 0 then
+                global.reviveQueue[groupTick] = nil
+            end
 
-            -- Count our revive and stop processing if we have done our number for this cycle.
-            revivesRemainingThisCycle = revivesRemainingThisCycle - 1
+            -- If we have done all we can in this cycle then stop looking at new ticks.
             if revivesRemainingThisCycle == 0 then
-                return
+                break
             end
         end
+    end
 
-        -- If reached here then this tick's revives are all complete so remove it.
-        global.reviveQueue[tick] = nil
-        --TODO: this breaks the looping as invalid key to next() in pairs. But the inner having its key set to nil was happy :S
+    -- Record what the last competed tick was.
+    if revivesRemainingThisCycle > 0 then
+        -- We ran to the end of the current tick and had spare revives available
+        global.reviveQueueNextTickToProcess = event.tick + DelayGroupingTicks
+    else
+        -- Ran out of revives mid processing the last tick so use the nextTick as worked out within the logic.
+        global.reviveQueueNextTickToProcess = nextTickToProcess
     end
 end
 
@@ -410,7 +439,7 @@ end
 BiterRevive.OnSurfaceRemoved = function(event)
     for _, tickRevives in pairs(global.reviveQueue) do
         for reviveIndex, reviveDetails in pairs(tickRevives) do
-            if reviveDetails.surface.index == event.surface_index then
+            if not reviveDetails.surface.valid or reviveDetails.surface.index == event.surface_index then
                 tickRevives[reviveIndex] = nil
             end
         end
