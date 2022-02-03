@@ -3,6 +3,7 @@
 local Commands = {}
 local Utils = require("utility/utils")
 local Constants = require("constants")
+local Colors = require("utility/colors")
 
 --- Register a function to be triggered when a command is run. Includes support to restrict usage to admins.
 --- Call from OnLoad and will remove any existing identically named command so no risk of double registering error.
@@ -25,7 +26,7 @@ Commands.Register = function(name, helpText, commandFunction, adminOnly)
                 if player.admin then
                     commandFunction(data)
                 else
-                    player.print("Must be an admin to run command: " .. data.name)
+                    player.print("Must be an admin to run command: " .. data.name, Colors.red)
                 end
             end
         end
@@ -129,18 +130,18 @@ end
 Commands.ParseGenericArgument = function(value, requiredType, mandatory, commandName, argumentName)
     if mandatory and value == nil then
         -- Mandatory and not provided so fail.
-        game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " required " .. argumentName .. " to be populated.")
+        game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " required " .. argumentName .. " to be populated.", Colors.red)
         return false
-    elseif not mandatory and value ~= nil then
-        -- Not mandatory and is provided so check it.
+    elseif mandatory or (not mandatory and value ~= nil) then
+        -- Is either mandatory and not nil (implicit), or not mandatory and is provided, so check it both ways.
 
         -- Check the type and handle the results.
         if type(value) ~= requiredType then
-            -- Wrong real type so fail.
-            game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " required " .. argumentName .. " to be of type " .. requiredType .. " when provided.")
+            -- Wrong type so fail.
+            game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " required " .. argumentName .. " to be of type " .. requiredType .. " when provided.", Colors.red)
             return false
         else
-            -- Right real type
+            -- Right type
             return true
         end
     else
@@ -164,6 +165,11 @@ Commands.ParseNumberArgument = function(value, requiredType, mandatory, commandN
         return false
     end
 
+    -- If value is nil and it passed the generic requirements which handles mandatory then end this parse successfully.
+    if value == nil then
+        return true
+    end
+
     local isWrongType = false
 
     -- If theres a specific fake type check that first.
@@ -174,7 +180,7 @@ Commands.ParseNumberArgument = function(value, requiredType, mandatory, commandN
             isWrongType = true
         end
         if isWrongType then
-            game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " required " .. argumentName .. " to be of type " .. requiredType .. " when provided.")
+            game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " required " .. argumentName .. " to be of type " .. requiredType .. " when provided.", Colors.red)
             return false
         end
     end
@@ -187,7 +193,7 @@ Commands.ParseNumberArgument = function(value, requiredType, mandatory, commandN
         isWrongType = true
     end
     if isWrongType then
-        game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " - argument " .. argumentName .. " must be between " .. numberMinLimit .. " and " .. numberMaxLimit)
+        game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " - argument " .. argumentName .. " must be between " .. numberMinLimit .. " and " .. numberMaxLimit, Colors.red)
         return false
     end
 
@@ -207,10 +213,15 @@ Commands.ParseStringArgument = function(value, mandatory, commandName, argumentN
         return false
     end
 
+    -- If value is nil and it passed the generic requirements which handles mandatory then end this parse successfully.
+    if value == nil then
+        return true
+    end
+
     -- Check the value is in the allowed strings requirement if provided.
     if allowedStrings ~= nil then
         if allowedStrings[value] == nil then
-            game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " - argument " .. argumentName .. " must be one of the allowed text strings.")
+            game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " - argument " .. argumentName .. " must be one of the allowed text strings.", Colors.red)
             return false
         end
     end
@@ -227,15 +238,20 @@ end
 ---@return boolean argumentValid
 Commands.ParseTableArgument = function(value, mandatory, commandName, argumentName, allowedKeys)
     -- Check its valid for generic requirements first.
-    if not Commands.ParseGenericArgument(value, "string", mandatory, commandName, argumentName) then
+    if not Commands.ParseGenericArgument(value, "table", mandatory, commandName, argumentName) then
         return false
+    end
+
+    -- If value is nil and it passed the generic requirements which handles mandatory then end this parse successfully.
+    if value == nil then
+        return true
     end
 
     -- Check the value's keys are in the allowed key requirement if provided.
     if allowedKeys ~= nil then
         for key in pairs(value) do
             if allowedKeys[key] == nil then
-                game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " - argument " .. argumentName .. " includes a non supported key: " .. tostring(key))
+                game.print(Constants.ModFriendlyName .. " - command " .. commandName .. " - argument " .. argumentName .. " includes a non supported key: " .. tostring(key), Colors.red)
                 return false
             end
         end

@@ -10,7 +10,7 @@ Notes
 -----
 
 - Any "unit" entity that breathes air is included in the revive logic by default. This will include all vanilla Factorio biters and I assume most modded enemies as well.
-- There is a mod setting to exclude prototype names from ever reviving, with the player's character and compilatron included by default. There is also a mod setting to exclude specific force's from ever reviving.
+- There is a mod setting to exclude prototype names from ever reviving, with compilatron included by default. There is also a mod setting to exclude specific force's from ever reviving.
 - Revive chance is a scale based on configurable settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
 - Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dieing.
 - Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the biter dies, but instead a fraction of a second later.
@@ -45,25 +45,27 @@ When the mod is evaluating command and mod settings to identify the current runt
 4. All commands with the Add priority will be added to the base value. If these are negative values then they will be deducted. This allows multiple Add commands to apply their cumulative effect.
 5. The final value for evolution and revive chance settings will be clamped between 0% and 100%. With duration min/max settings being prevented going below 0 seconds.
 
-Commands are provided as a single JSON argument with the below structure:
+Command name: biter_revive_add_modifier
+
+Commands are provided with a single JSON argument with the below structure:
 - duration = number of seconds the command will be active for (integer).
-- settings = a table (dictionary) of setting name (string) and value (integer). The setting names supported are:
-  - evoMin = the evolution minimum required for reviving to start % as a number (integer), i.e. 50 = 50% - equivalent of mod setting "Evolution % minimum for reviving".
-  - evoMax = the evolution maximum when the revive chance doesn't increase any more % as a number (integer), i.e. 80 = 80% - equivalent of mod setting "Evolution % for maximum reviving chance".
-  - chanceBase = the revive chance % when at minimum evolution as a number (integer), i.e. 5 = 5% - Equivalent of mod setting "Chance of revival starting %".
-  - chancePerEvo = the revive chance % increase per evolution % up to the max evolution limit as a number (integer), i.e. 2 = 2% - equivalent of mod setting "Chance of revive % per evolution %".
+- settings = a table (dictionary) of setting name (string) and value (double). The setting names supported are:
+  - evoMin = the evolution minimum required for reviving to start % as a number (double), i.e. 50 = 50% - equivalent of mod setting "Evolution % minimum for reviving".
+  - evoMax = the evolution maximum when the revive chance doesn't increase any more % as a number (double), i.e. 80 = 80% - equivalent of mod setting "Evolution % for maximum reviving chance".
+  - chanceBase = the revive chance % when at minimum evolution as a number (double), i.e. 5 = 5% - Equivalent of mod setting "Chance of revival starting %".
+  - chancePerEvo = the revive chance % increase per evolution % up to the max evolution limit as a number (double), i.e. 2 = 2% - equivalent of mod setting "Chance of revive % per evolution %".
   - chanceFormula = the revival chance formula as a text string. - Equivalent of mod setting "Chance of revive formula". NOTE: only the first active command in priority order will set the formula, all others will be ignored. As the concept of adding raw formula togeather or finding the largest formula in a mod wide abstract way dons't make sense. Order is: enforced command, base command, mod setting, add command.
   - delayMin = the revive delay minimum in seconds as a number (integer), i.e. 0 = 0 seconds - equivalent of mod setting "Revive delay minimum seconds".
   - delayMax = the revive delay maximum in seconds as a number (integer), i.e. 5 = 5 seconds - equivalent of mod setting "Revive delay maximum seconds".
 - priority = the priority for this command as a text string. Supported values "enforced", "base", "add".
 
-Example Commands in JSON:
+Example Commands with their JSON string:
 1. Make biters revive in all cases for 1 minute, assuming there is no revive formula setting present in the mods usage:
-   > `{"duration"=60, "settings"={ "evoMin"=0, "evoMax"=100, "chanceBase"=100, "chancePerEvo"=0}, "priority"="enforced"}`
+   > `/biter_revive_add_modifier {"duration":60, "settings":{ "evoMin":0, "evoMax":100, "chanceBase":100, "chancePerEvo":0}, "priority":"enforced"}`
 2. Make biters have a base delayed revive time of between 1 and 2 minutes for 5 minutes, with any other runtime settings being applied still:
-   > `{"duration"=300, "settings"={ "delayMin"=60, "delayMax"=120}, "priority"="base"}`
+   > `/biter_revive_add_modifier {"duration":300, "settings":{ "delayMin":60, "delayMax":120}, "priority":"base"}`
 3. Make biters 5% more likely to revive than the current runtime settings would be otherwise, for 3 minutes:
-   > `{"duration"=180", "settings"={ "chanceBase"=5 }, "priority"="add"}`
+   > `/biter_revive_add_modifier {"duration":180", "settings":{ "chanceBase":5 }, "priority":"add"}`
 
 
 
@@ -81,3 +83,6 @@ TODO
 ----
 
 Push the updated Utils from this mod back in Utils Git and apply to the railway tunnel mod.
+
+
+/biter_revive_add_modifier {"duration":60}

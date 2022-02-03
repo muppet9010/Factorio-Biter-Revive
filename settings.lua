@@ -72,7 +72,7 @@ data:extend(
             name = "biter_revive-blacklisted_prototype_names",
             type = "string-setting",
             allow_blank = true,
-            default_value = "character, compilatron",
+            default_value = "compilatron",
             setting_type = "runtime-global",
             order = "2001"
         },

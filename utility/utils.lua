@@ -935,6 +935,7 @@ Utils.TableKeyToNumberedListString = function(aTable)
         else
             newString = newString .. ", " .. count .. ": '" .. tostring(key) .. "'"
         end
+        count = count + 1
     end
     return newString
 end
