@@ -34,11 +34,13 @@ RCON Command
 The command concept is designed as a highly flexible way of applying setting values and modifiers. Commands apply for a limited duration and the mod supports multiple being active at one time and "stacking" with each other. When a biter dies the mod evaluates all active command settings and the mod settings in a hierarchical manner to establish the correct current runtime settings.
 
 Each command will include:
+
 - Duration: how long in seconds the command will be active for.
 - Settings: one or more settings that this command includes values for. These settings will correspond to the mod's settings. While the mod setting values are restricted in range, command setting values can be at any scale of the correct type (i.e. integer) and the final result will be clamped to between 0% and 100%. This is to allow unusual streamer requirements.
 - Priority: this commands hierarchical state during the evaluation for current runtime settings. Types are: Enforced, Base, Add.
 
 When the mod is evaluating command and mod settings to identify the current runtime settings it follows the below logic. It reviews all active commands for inclusion of the current setting, with the exception of the "chanceFormula" setting (see its command setting for details).
+
 1. If any have the Enforced priority then only these commands contribute to the runtime value of the setting. All other non Enforced priority commands and the mod setting are ignored for this. If multiple commands have Enforced priority then the "widest" value will be used, i.e the lowest if the setting is a minimum and the largest if the setting is a maximum.
 2. If any have the Base priority then these commands will set the base value of the setting, replacing the mod setting. Any Add priority commands will be applied on top of this. If multiple commands have Base priority then the "widest" value will be used, i.e the lowest if the setting is a minimum and the largest if the setting is a maximum.
 3. If no command had Enforce or Base priority for this setting then the mod setting value will provide the base value.
@@ -48,6 +50,7 @@ When the mod is evaluating command and mod settings to identify the current runt
 Command name: biter_revive_add_modifier
 
 Commands are provided with a single JSON argument with the below structure:
+
 - duration = number of seconds the command will be active for (integer).
 - settings = a table (dictionary) of setting name (string) and value (double). The setting names supported are:
   - evoMin = the evolution minimum required for reviving to start % as a number (double), i.e. 50 = 50% - equivalent to the mod setting "Evolution % minimum for reviving".
@@ -60,6 +63,7 @@ Commands are provided with a single JSON argument with the below structure:
 - priority = the priority for this command as a text string. Supported values "enforced", "base", "add".
 
 Example Commands with their JSON string:
+
 1. Make biters revive in all cases for 1 minute, assuming there is no revive formula setting present in the mods usage:
    > `/biter_revive_add_modifier {"duration":60, "settings":{ "evoMin":0, "evoMax":100, "chanceBase":100, "chancePerEvo":0}, "priority":"enforced"}`
 2. Make biters have a base delayed revive time of between 1 and 2 minutes for 5 minutes, with any other runtime settings being applied still:
@@ -71,7 +75,7 @@ Example Commands with their JSON string:
 Debug Command
 -------------
 
-There is a debug command that will write out state data to assist with any issue debugging. It writes the state data to a file in the players Factorio script-data folder called "biter_revive_state_data.csv". It will overwrite any preivous debug data file of the same name.
+There is a debug command that will write out state data to assist with any issue debugging. It writes the state data to a file in the players Factorio script-data folder called "biter_revive_state_data.csv". It will overwrite any previous debug data file of the same name.
 
 Command Name: `biter_revive_dump_state_data`
 
