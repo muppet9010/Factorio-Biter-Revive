@@ -54,7 +54,7 @@ Commands are provided with a single JSON argument with the below structure:
   - evoMax = the evolution maximum when the revive chance doesn't increase any more % as a number (double), i.e. 80 = 80% - equivalent of mod setting "Evolution % for maximum reviving chance".
   - chanceBase = the revive chance % when at minimum evolution as a number (double), i.e. 5 = 5% - Equivalent of mod setting "Chance of revival starting %".
   - chancePerEvo = the revive chance % increase per evolution % up to the max evolution limit as a number (double), i.e. 2 = 2% - equivalent of mod setting "Chance of revive % per evolution %".
-  - chanceFormula = the revival chance formula as a text string. - Equivalent of mod setting "Chance of revive formula". NOTE: only the first active command in priority order will set the formula, all others will be ignored. As the concept of adding raw formula togeather or finding the largest formula in a mod wide abstract way dons't make sense. Order is: enforced command, base command, mod setting, add command.
+  - chanceFormula = the revival chance formula as a text string. - Equivalent of mod setting "Chance of revive formula". NOTE: only a single active command of the highest priority order will set the formula. The exact applied highest priority command will be random due to internal Lua table ordering. This isn't deemed an issue as the concept of adding raw formula togeather or finding the largest formula in a mod wide abstract way doesn't make sense. Priority order is: enforced command, base command, mod setting, add command.
   - delayMin = the revive delay minimum in seconds as a number (integer), i.e. 0 = 0 seconds - equivalent of mod setting "Revive delay minimum seconds".
   - delayMax = the revive delay maximum in seconds as a number (integer), i.e. 5 = 5 seconds - equivalent of mod setting "Revive delay maximum seconds".
 - priority = the priority for this command as a text string. Supported values "enforced", "base", "add".
@@ -82,7 +82,21 @@ Future Ideas
 TODO
 ----
 
+Add a command to dump command and setting values to a file for debug inspection.
+
+Cache prototype names and if they are suitable or not.
+Just try and place biter and if it fails then look ofr a nearby place as 99% of them can just be added in situ.
+Removed event scheduler and use the 15 tick loop to check for commands that have expired ?
+
+Spell check readme again.
 Push the updated Utils from this mod back in Utils Git and apply to the railway tunnel mod.
 
 
-/biter_revive_add_modifier {"duration":60}
+
+/biter_revive_add_modifier {"duration":120, "settings":{ "evoMin":0.05 }, "priority":"add"}
+/biter_revive_add_modifier {"duration":180, "settings":{ "evoMin":0.005 }, "priority":"add"}
+MOD SETTING IS: evo*1
+/biter_revive_add_modifier {"duration":60, "settings":{ "evoMin":15 }, "priority":"base"}
+/biter_revive_add_modifier {"duration":180, "settings":{ "evoMin":30 }, "priority":"base"}
+/biter_revive_add_modifier {"duration":20, "settings":{ "evoMin":50 }, "priority":"enforced"}
+/biter_revive_add_modifier {"duration":10, "settings":{ "evoMin":60 }, "priority":"enforced"}

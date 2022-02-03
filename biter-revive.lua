@@ -7,7 +7,7 @@ local EventScheduler = require("utility/event-scheduler")
 local math_min, math_max, math_floor, math_random = math.min, math.max, math.floor, math.random
 
 local DelayGroupingTicks = 15 -- How many ticks between each goup of biters to revive.
-local ForceEvoCacheTicks = 60 -- How long to cache a forces evo for before it is refreshed on next dead unit. Currently 1 second as then it updates frequently after commands and settings are changed on its own. I wonder if I intended for it to be 1 minute, but no real load in its processing so.
+local ForceEvoCacheTicks = 3600 -- How long to cache a forces evo for before it is refreshed on next dead unit. Currently 1 minute.
 
 local CommandAttributes = {
     duration = "duration",
@@ -113,26 +113,32 @@ end
 BiterRevive.OnSettingChanged = function(event)
     -- Event is nil when this is called from OnStartup for a new game or a mod change. In this case we update all settings.
 
+    local updateAllForceData = false
+
     -- These settings need processing to establish the current value as RCON commands can affect the final value in global.
     if event == nil or event.setting == "biter_revive-evolution_percent_minimum" then
         local settingValue = settings.global["biter_revive-evolution_percent_minimum"].value
         global.modSettings_evolutionRequirementMin = settingValue / 100
         BiterRevive.CalculateCurrentEvolutionMinimum()
+        updateAllForceData = true
     end
     if event == nil or event.setting == "biter_revive-evolution_percent_maximum" then
         local settingValue = settings.global["biter_revive-evolution_percent_maximum"].value
         global.modSettings_evolutionRequirementMax = settingValue / 100
         BiterRevive.CalculateCurrentEvolutionMaximum()
+        updateAllForceData = true
     end
     if event == nil or event.setting == "biter_revive-chance_base_percent" then
         local settingValue = settings.global["biter_revive-chance_base_percent"].value
         global.modSettings_reviveChanceBaseValue = settingValue / 100
         BiterRevive.CalculateCurrentChanceBase()
+        updateAllForceData = true
     end
     if event == nil or event.setting == "biter_revive-chance_percent_per_evolution_percent" then
         local settingValue = settings.global["biter_revive-chance_percent_per_evolution_percent"].value
         global.modSettings_reviveChancePerEvo = settingValue
         BiterRevive.CalculateCurrentChancePerEvolution()
+        updateAllForceData = true
     end
     if event == nil or event.setting == "biter_revive-chance_formula" then
         local settingValue = settings.global["biter_revive-chance_formula"].value
@@ -153,6 +159,7 @@ BiterRevive.OnSettingChanged = function(event)
             global.modSettings_reviveChancePerEvoPercentFormula = ""
         end
         BiterRevive.CalculateCurrentChanceFormula()
+        updateAllForceData = true
     end
     if event == nil or event.setting == "biter_revive-delay_seconds_minimum" then
         local settingValue = settings.global["biter_revive-delay_seconds_minimum"].value
@@ -228,6 +235,17 @@ BiterRevive.OnSettingChanged = function(event)
             game.print("Biter Revive - Blacklisted force Ids changed to: " .. Utils.TableKeyToNumberedListString(forceNames))
         end
     end
+
+    -- Update all cached force data if its needed after settings changd.
+    if updateAllForceData then
+        local currentTick
+        if event == nil then
+            currentTick = game.tick
+        else
+            currentTick = event.tick
+        end
+        BiterRevive.UpdateAllForcesData(currentTick)
+    end
 end
 
 --- When a monitored entity type has died review it and if approperiate add it to the revive queue.
@@ -255,7 +273,7 @@ BiterRevive.OnEntityDied = function(event)
     local forceReviveChanceObject = global.forcesReviveChance[unitsForce_index]
     if forceReviveChanceObject == nil then
         -- Create the biter force as it doesn't exist. The large negative lastCheckedTick will ensure it is updated on first use.
-        global.forcesReviveChance[unitsForce_index] = {force = unitsForce, forceId = unitsForce_index, lastCheckedTick = -2000, reviveChance = nil}
+        global.forcesReviveChance[unitsForce_index] = {force = unitsForce, forceId = unitsForce_index, lastCheckedTick = -9999999, reviveChance = nil}
         forceReviveChanceObject = global.forcesReviveChance[unitsForce_index]
     end
     if forceReviveChanceObject.lastCheckedTick < event.tick - ForceEvoCacheTicks then
@@ -304,8 +322,11 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
     local currentForceEvo = forceReviveChanceObject.force.evolution_factor
     if currentForceEvo >= global.evolutionRequirementMin then
         -- Current evo is >= min required so work out approperaite revive chance.
-        local forceEvoAboveMin = currentForceEvo - global.evolutionRequirementMin
 
+        -- Work out how much evo is above min, up to the max setting.
+        local rawForceAboveMin = currentForceEvo - global.evolutionRequirementMin
+        local maxForceDifAllowed = math.max(global.evolutionRequirementMax - global.evolutionRequirementMin, 0)
+        local forceEvoAboveMin = math_min(rawForceAboveMin, maxForceDifAllowed)
         local chanceForEvo
 
         -- If the chance per evo formula is blank then use the number setting, otherwise we use the formula.
@@ -351,6 +372,14 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
     forceReviveChanceObject.lastCheckedTick = currentTick
 end
 
+--- Called to update all forces cached data after a setting has been changed that will affect revive chances.
+---@param currentTick Tick
+BiterRevive.UpdateAllForcesData = function(currentTick)
+    for _, forceReviveChanceObject in pairs(global.forcesReviveChance) do
+        BiterRevive.UpdateForceData(forceReviveChanceObject, currentTick)
+    end
+end
+
 --- Process any current queue of biter revives. Called once every DelayGroupingTicks ticks.
 ---@param event NthTickEventData
 BiterRevive.ProcessQueue = function(event)
@@ -382,8 +411,9 @@ BiterRevive.ProcessQueue = function(event)
             for reviveIndex, reviveDetails in pairs(reviveQueueTickObjects) do
                 -- We handle surface's being deleted and forces merged via events so no need to check them per execution here.
 
-                -- Do the actual revive asuming a suitable position is found.
-                spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 5, 0.1)
+                -- The search for a valid position has to be very small so that biters can revive over walls. Given biters don't collide with each other this should nearly always be found at their current position.
+                spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 0.5, 0.1)
+                -- If no spawning point is found just forget about this revive as very unlikely to happen.
                 if spawnPosition ~= nil then
                     reviveDetails.surface.create_entity {
                         name = reviveDetails.prototypeName,
@@ -435,10 +465,12 @@ BiterRevive.ProcessQueue = function(event)
     end
 end
 
---- Called when forces are merged and we need to update any scheduled revives of the removed force.
+--- Called when forces are merged and we need to update all data for this.
 ---@param event on_forces_merged
 BiterRevive.OnForcesMerged = function(event)
     local destination_index = event.destination.index
+
+    -- Check any scheduled revives for being related to the removed force.
     for _, tickRevives in pairs(global.reviveQueue) do
         for _, reviveDetails in pairs(tickRevives) do
             if reviveDetails.forceId == event.source_index then
@@ -448,6 +480,9 @@ BiterRevive.OnForcesMerged = function(event)
             end
         end
     end
+
+    -- If there was a cached force chance object remove it.
+    global.forcesReviveChance[event.source_index] = nil
 end
 
 --- Called when a surface is removed or cleared and we need to remove any scheduled revives on that surface.
@@ -481,27 +516,40 @@ end
 
 --- Call the approperiate update functions for the runtime globals based on which fields were included in the command details.
 ---@param commandDetails CommandDetails
-BiterRevive.CallUpdateFunctionsForCommandDetails = function(commandDetails)
+---@param currentTick Tick
+BiterRevive.CallUpdateFunctionsForCommandDetails = function(commandDetails, currentTick)
+    local updateAllForceData = false
+
     if commandDetails.evoMin ~= nil then
         BiterRevive.CalculateCurrentEvolutionMinimum()
+        updateAllForceData = true
     end
     if commandDetails.evoMax ~= nil then
         BiterRevive.CalculateCurrentEvolutionMaximum()
+        updateAllForceData = true
     end
     if commandDetails.chanceBase ~= nil then
         BiterRevive.CalculateCurrentChanceBase()
+        updateAllForceData = true
     end
     if commandDetails.chancePerEvo ~= nil then
         BiterRevive.CalculateCurrentChancePerEvolution()
+        updateAllForceData = true
     end
     if commandDetails.chanceFormula ~= nil then
         BiterRevive.CalculateCurrentChanceFormula()
+        updateAllForceData = true
     end
     if commandDetails.delayMin ~= nil then
         BiterRevive.CalculateCurrentDelayMinimum()
     end
     if commandDetails.delayMax ~= nil then
         BiterRevive.CalculateCurrentDelayMaximum()
+    end
+
+    -- Update all cached force data if its needed after settings changd.
+    if updateAllForceData then
+        BiterRevive.UpdateAllForcesData(currentTick)
     end
 end
 
@@ -530,6 +578,7 @@ BiterRevive.CalculateCurrentChanceFormula = function()
             local commandPriorityOrderedIndex = CommandPriorityOrderedIndex[command.priority]
             if commandPriorityOrderedIndex < currentFormulaPriorityOrderedIndex then
                 currentFormula = command.chanceFormula
+                currentFormulaPriorityOrderedIndex = commandPriorityOrderedIndex
                 if commandPriorityOrderedIndex == 1 then
                     -- Nothing can be higher priority and we use the first one found of a priority.
                     break
@@ -734,7 +783,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
     -- Schedule removal from commands table at end of duration.
     EventScheduler.ScheduleEventOnce(commandDetails.removalTick, "BiterRevive.Scheduled_RemoveCommand", commandDetails.id)
 
-    BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetails)
+    BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetails, command.tick)
 end
 
 --- Scheduled to remove a command form the commands list.
@@ -747,7 +796,7 @@ BiterRevive.Scheduled_RemoveCommand = function(event)
     end
 
     global.commands[event.instanceId] = nil
-    BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetailsToRemove)
+    BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetailsToRemove, event.tick)
 end
 
 return BiterRevive
