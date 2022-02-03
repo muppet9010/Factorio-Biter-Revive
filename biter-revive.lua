@@ -107,6 +107,7 @@ BiterRevive.OnLoad = function()
     Events.RegisterHandlerEvent(defines.events.on_surface_cleared, "BiterRevive.OnSurfaceRemoved", BiterRevive.OnSurfaceRemoved)
     Commands.Register("biter_revive_add_modifier", {"command.biter_revive_add_modifier"}, BiterRevive.OnCommand_AddModifier, true)
     EventScheduler.RegisterScheduledEventType("BiterRevive.Scheduled_RemoveCommand", BiterRevive.Scheduled_RemoveCommand)
+    Commands.Register("biter_revive_dump_state_data", {"command.biter_revive_dump_state_data"}, BiterRevive.OnCommand_DumptStateData, true)
 end
 
 ---@param event on_runtime_mod_setting_changed|null
@@ -690,7 +691,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
     end
 
     local settings = data.settings
-    if not Commands.ParseTableArgument(settings, true, command.name, settings, CommandSettingNames) then
+    if not Commands.ParseTableArgument(settings, true, command.name, "settings", CommandSettingNames) then
         return
     end
 
@@ -797,6 +798,45 @@ BiterRevive.Scheduled_RemoveCommand = function(event)
 
     global.commands[event.instanceId] = nil
     BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetailsToRemove, event.tick)
+end
+
+--- Dumps the mod setting cache, active commands and runtime setting values to a text file on the players pc.
+---@param command CustomCommandData
+BiterRevive.OnCommand_DumptStateData = function(command)
+    local dumptext = ""
+
+    -- Mod settings cache
+    dumptext = dumptext .. "Mod Settings" .. "\r\n"
+    dumptext = dumptext .. "evolutionRequirementMin, " .. tostring(global.modSettings_evolutionRequirementMin) .. "\r\n"
+    dumptext = dumptext .. "evolutionRequirementMax, " .. tostring(global.modSettings_evolutionRequirementMax) .. "\r\n"
+    dumptext = dumptext .. "reviveChanceBaseValue, " .. tostring(global.modSettings_reviveChanceBaseValue) .. "\r\n"
+    dumptext = dumptext .. "reviveChancePerEvo, " .. tostring(global.modSettings_reviveChancePerEvo) .. "\r\n"
+    dumptext = dumptext .. "reviveChancePerEvoPercentFormula, " .. tostring(global.modSettings_reviveChancePerEvoPercentFormula) .. "\r\n"
+    dumptext = dumptext .. "reviveDelayMin, " .. tostring(global.modSettings_reviveDelayMin) .. "\r\n"
+    dumptext = dumptext .. "reviveDelayMax, " .. tostring(global.modSettings_reviveDelayMax) .. "\r\n"
+
+    -- Commands
+    dumptext = dumptext .. "\r\n\r\n"
+    dumptext = dumptext .. "Commands" .. "\r\n"
+    dumptext = dumptext .. "id, priority, duration, removalTick, evoMin, evoMax, chanceBase, chancePerEvo, chanceFormula, delayMin, delayMax" .. "\r\n"
+    for _, commandDetails in pairs(global.commands) do
+        dumptext = dumptext .. tostring(commandDetails.id) .. ", " .. tostring(commandDetails.priority) .. ", " .. tostring(commandDetails.duration) .. ", " .. tostring(commandDetails.removalTick) .. ", " .. tostring(commandDetails.evoMin) .. ", " .. tostring(commandDetails.evoMax) .. ", " .. tostring(commandDetails.chanceBase) .. ", " .. tostring(commandDetails.chancePerEvo) .. ", " .. tostring(commandDetails.chanceFormula) .. ", " .. tostring(commandDetails.delayMin) .. ", " .. tostring(commandDetails.delayMax) .. "\r\n"
+    end
+
+    -- Runtime settings
+    dumptext = dumptext .. "\r\n\r\n"
+    dumptext = dumptext .. "Runtime Settings" .. "\r\n"
+    dumptext = dumptext .. "evolutionRequirementMin, " .. tostring(global.evolutionRequirementMin) .. "\r\n"
+    dumptext = dumptext .. "evolutionRequirementMax, " .. tostring(global.evolutionRequirementMax) .. "\r\n"
+    dumptext = dumptext .. "reviveChanceBaseValue, " .. tostring(global.reviveChanceBaseValue) .. "\r\n"
+    dumptext = dumptext .. "reviveChancePerEvoNumber, " .. tostring(global.reviveChancePerEvoNumber) .. "\r\n"
+    dumptext = dumptext .. "reviveChancePerEvoPercentFormula, " .. tostring(global.reviveChancePerEvoPercentFormula) .. "\r\n"
+    dumptext = dumptext .. "reviveDelayMin, " .. tostring(global.reviveDelayMin) .. "\r\n"
+    dumptext = dumptext .. "reviveDelayMax, " .. tostring(global.reviveDelayMax) .. "\r\n"
+
+    -- Write out the file to disk and message the player.
+    game.write_file("biter_revive_state_data.csv", dumptext, false, command.player_index)
+    game.get_player(command.player_index).print("Biter Revive - state data written to Factorio/script-output/biter_revive_state_data.csv", Colors.green)
 end
 
 return BiterRevive
