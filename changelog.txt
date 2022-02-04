@@ -6,7 +6,9 @@ Date: 2022-02-04
     - Remove the corpses of a unit when it revives.
   Changes:
     - Removed the requirement of units to have the "breaths-air" flag as irrelevent.
+    - Chance formula validation for command and mod settings enhanced to test 0 and 100 evolution values and to provide more detailed failure feedback.
   Bugfixes:
+    - Chance formula validated on command when missing before.
   Info:
 ---------------------------------------------------------------------------------------------------
 Version: 1.1.0

@@ -5,7 +5,7 @@ local Commands = require("utility/commands")
 local math_min, math_max, math_floor, math_random = math.min, math.max, math.floor, math.random
 
 local DelayGroupingTicks = 15 -- How many ticks between each goup of biters to revive.
-local ForceEvoCacheTicks = 3600 -- How long to cache a forces evo for before it is refreshed on next dead unit. Currently 1 minute.
+local ForceEvoCacheTicks = 600 -- How long to cache a forces evo for before it is refreshed on next dead unit. Currently 10 seconds as a balance between proper caching and reacting to a sudden evolution jump from a modded/scripted event.
 
 local CommandAttributes = {
     duration = "duration",
@@ -157,13 +157,13 @@ BiterRevive.OnSettingChanged = function(event)
         -- Check the formula and handle it specially.
         if settingValue ~= "" then
             -- Formula provided so needs checking.
-            local validatedFormulaString = BiterRevive.GetValdiatedFormulaString(settingValue)
-            if validatedFormulaString ~= "" then
+            local validatedFormulaString, errorMessage = BiterRevive.GetValdiatedFormulaString(settingValue)
+            if errorMessage == nil then
                 -- Formula is good to use.
                 global.modSettings_reviveChancePerEvoPercentFormula = validatedFormulaString
             else
                 -- Formula is bad.
-                game.print("Biter Revive - Invalid revive chance formula provided in mod settings.", Colors.red)
+                game.print("Biter Revive - Invalid revive chance formula provided in mod settings. Error: " .. errorMessage, Colors.red)
                 global.modSettings_reviveChancePerEvoPercentFormula = ""
             end
         else
@@ -608,21 +608,32 @@ BiterRevive.OnSurfaceRemoved = function(event)
     end
 end
 
---- Checks a forumla string handles an evo value of 10% (10). If it does returns the formula string, otherwise returns a blank string.
+--- Checks a forumla string handles an evo value of 0% (0) and 100% (100). If it does returns the formula string, otherwise returns a blank string "" and the error message.
 ---@param formulaStringToTest string
----@return string validatedFormulaString
+---@return string validatedFormulaString @ Either the validated string or blank string "".
+---@return string|null failureReason @ A message of why it failed validation or nil if it passed.
 BiterRevive.GetValdiatedFormulaString = function(formulaStringToTest)
-    local success, result =
-        pcall(
-        function()
-            return load("local evo = 10; return " .. formulaStringToTest)()
+    for _, testEvo in pairs({0, 100}) do
+        local success, result =
+            pcall(
+            function()
+                return load("local evo = " .. testEvo .. "; return " .. formulaStringToTest)()
+            end
+        )
+        -- Check for erors and inspect the result.
+        if not success then
+            -- Test failed
+            return "", "syntax error of some type processing for test value: " .. tostring(testEvo)
+        else
+            -- Test succeded s check the result
+            if type(result) ~= "number" then
+                return "", "result wasn't a number for test value: " .. tostring(testEvo)
+            elseif result ~= result then
+                return "", "result was NaN (not a number) for test value: " .. tostring(testEvo)
+            end
         end
-    )
-    if success and type(result) == "number" then
-        return formulaStringToTest
-    else
-        return ""
     end
+    return formulaStringToTest, nil
 end
 
 --- Call the approperiate update functions for the runtime globals based on which fields were included in the command details.
@@ -864,15 +875,26 @@ BiterRevive.OnCommand_AddModifier = function(command)
         return
     end
 
-    local chanceFormula = settings.chanceFormula ---@type string
-    if not Commands.ParseStringArgument(chanceFormula, false, command.name, "chanceFormula") then
+    local chanceFormula_raw = settings.chanceFormula ---@type string
+    if not Commands.ParseStringArgument(chanceFormula_raw, false, command.name, "chanceFormula") then
         return
     end
-    -- Set the formula blank string to nil as its more logical to check commands with it as optional setting that way. People may enter it as a blank string as thats what the mod setting requires. The global cached mod setting uses a blank string and not nil however.
-    if chanceFormula ~= nil and chanceFormula == "" then
-        chanceFormula = nil
+    local chanceFormula  ---@type string
+    if chanceFormula_raw ~= nil then
+        if chanceFormula_raw ~= "" then
+            -- Check the formula string is valid.
+            local errorMessage  ---@type string
+            chanceFormula, errorMessage = BiterRevive.GetValdiatedFormulaString(chanceFormula_raw)
+            if errorMessage ~= nil then
+                -- Formula is bad.
+                game.print(errorMessageStart .. "Invalid revive chance formula provided. Error: " .. errorMessage, Colors.red)
+                return
+            end
+        else
+            -- Set the formula blank string to nil as its more logical to check commands with it as optional setting that way. People may enter it as a blank string as thats what the mod setting requires. The global cached mod setting uses a blank string and not nil however.
+            chanceFormula = nil
+        end
     end
-    -- TODO: if value isn't nil then check the formula is valid like we do with mod settings. BiterRevive.GetValdiatedFormulaString()
 
     local delayMinSeconds_raw = settings.delayMin ---@type Second
     if not Commands.ParseNumberArgument(delayMinSeconds_raw, "integer", false, command.name, "delayMin") then
