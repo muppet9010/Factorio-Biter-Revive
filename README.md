@@ -78,13 +78,3 @@ Debug Command
 There is a debug command that will write out state data to assist with any issue debugging. It writes the state data to a file in the players Factorio script-data folder called "biter_revive_state_data.csv". It will overwrite any previous debug data file of the same name.
 
 Command Name: `biter_revive_dump_state_data`
-
-
-
-Future Ideas
-------------
-
-- Mod setting for max revives per unit. Avoid infinitely reviving the same biter every tick. Not needed in commands. Does require getting unit_number of each entity scheduled for revival and tracking forwards into new unit_number and checking each dead entity to tidy up the table if it's not chosen for a repeat revival.
-- Mod setting for zzz (configurable text) floating text over units delayed for reviving when they are delayed for more than 2 (test this looks right) seconds.
-- The parsing through commands full data is quite inefficient, although very natural data structure. If it causes any UPS issues then look at storing command setting values by setting name and priority so that parsing them is very light weight. Will be more complicated code for command creation and removal though.
-- Track biters marked for reviving corpses so we can remove them when the biter revives. Would need to monitor additional events to populate the corpse list and link the 2 events together.

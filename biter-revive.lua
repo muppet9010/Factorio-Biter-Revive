@@ -412,18 +412,31 @@ BiterRevive.ProcessQueue = function(event)
             for reviveIndex, reviveDetails in pairs(reviveQueueTickObjects) do
                 -- We handle surface's being deleted and forces merged via events so no need to check them per execution here.
 
-                -- The search for a valid position has to be very small so that biters can revive over walls. Given biters don't collide with each other this should nearly always be found at their current position.
-                spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 0.5, 0.1)
-                -- If no spawning point is found just forget about this revive as very unlikely to happen.
-                if spawnPosition ~= nil then
+                -- Just try and revive the biter as almost always it will just work.
+                local revivedBiter =
                     reviveDetails.surface.create_entity {
-                        name = reviveDetails.prototypeName,
-                        position = spawnPosition,
-                        force = reviveDetails.force,
-                        orientation = reviveDetails.orientation,
-                        create_build_effect_smoke = false,
-                        raise_built = true
-                    }
+                    name = reviveDetails.prototypeName,
+                    position = reviveDetails.position,
+                    force = reviveDetails.force,
+                    orientation = reviveDetails.orientation,
+                    create_build_effect_smoke = false,
+                    raise_built = true
+                }
+                -- If the revive failed then check for another position and try again.
+                if revivedBiter == nil then
+                    -- The search for a valid position has to be very small so that biters can revive over walls.
+                    spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 0.5, 0.1)
+                    -- If no spawning point is found just forget about this revive as very unlikely to happen.
+                    if spawnPosition ~= nil then
+                        reviveDetails.surface.create_entity {
+                            name = reviveDetails.prototypeName,
+                            position = spawnPosition,
+                            force = reviveDetails.force,
+                            orientation = reviveDetails.orientation,
+                            create_build_effect_smoke = false,
+                            raise_built = true
+                        }
+                    end
                 end
 
                 -- Remove this revive from the current tick as done.

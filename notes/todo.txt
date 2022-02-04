@@ -1,0 +1,9 @@
+- add a gif to the mod portal page at the top
+- Make the flags for requirement / blacklist prototypes be mod settings.
+- Cache the valid/invalid prototype names as discovered.
+
+
+- Mod setting for max revives per unit. Avoid infinitely reviving the same biter every tick. Not needed in commands. Does require getting unit_number of each entity scheduled for revival and tracking forwards into new unit_number and checking each dead entity to tidy up the table if it's not chosen for a repeat revival.
+- Mod setting for zzz (configurable text) floating text over units delayed for reviving when they are delayed for more than 2 (test this looks right) seconds.
+- The parsing through commands full data is quite inefficient, although very natural data structure. If it causes any UPS issues then look at storing command setting values by setting name and priority so that parsing them is very light weight. Will be more complicated code for command creation and removal though.
+- Track biters marked for reviving corpses so we can remove them when the biter revives. Would need to monitor additional events to populate the corpse list and link the 2 events together.
