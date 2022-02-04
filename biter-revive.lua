@@ -87,7 +87,7 @@ BiterRevive.CreateGlobals = function()
     global.modSettings_reviveDelayMin = global.modSettings_reviveDelayMin or 0 ---@type Tick @ Range of >= 0.
     global.modSettings_reviveDelayMax = global.modSettings_reviveDelayMax or 0 ---@type Tick @ Range of >= 0.
 
-    global.blacklistedPrototypeNames = global.blacklistedPrototypeNames or {} ---@type table<string, True> @ The key and value are both the blacklisted prototype name.
+    global.blacklistedPrototypeNames = global.blacklistedPrototypeNames or {} ---@type table<string, True> @ The key is blacklisted prototype name, with a value of true.
     global.raw_BlacklistedPrototypeNames = global.raw_BlacklistedPrototypeNames or "" ---@type string @ The raw setting value.
     global.blacklisedForceIds = global.blacklisedForceIds or {} ---@type table<Id, True> @ The force Id as key, with the force name we match against the setting on as the value.
     global.raw_BlacklistedForceNames = global.raw_BlacklistedForceNames or "" ---@type string @ The raw setting value.
@@ -252,11 +252,8 @@ end
 --- When a monitored entity type has died review it and if approperiate add it to the revive queue.
 ---@param event on_entity_died
 BiterRevive.OnEntityDied = function(event)
-    -- Current ly only even so filtered to "type = unit" and entity will always be valid as nothing within the mod can invalid it.
+    -- Currently only even so filtered to "type = unit" and entity will always be valid as nothing within the mod can invalid it.
     local entity = event.entity
-    if not entity.has_flag("breaths-air") then
-        return
-    end
 
     local entity_name = entity.name
     if global.blacklistedPrototypeNames[entity_name] ~= nil then

@@ -9,8 +9,7 @@ The chance of the revival is based on a configurable scale driven by the enemy f
 Notes
 -----
 
-- Any "unit" entity that breathes air is included in the revive logic by default. This will include all vanilla Factorio biters and I assume modded enemies as well.
-- There is a mod setting to exclude prototype names from ever reviving, with compilatron included by default. There is also a mod setting to exclude specific force's from ever reviving.
+- Any "unit" entity is available for revival with various mod settings allowing fine tuning of whats excluded by entity and force name. By default the mod settings are configured only for the compilatron unit to be excluded.
 - Revive chance is a scale based on configurable settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
 - Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dieing.
 - Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the biter dies, but instead a fraction of a second later.
