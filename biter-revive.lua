@@ -33,7 +33,8 @@ local CommandSettingNames = {
     chancePerEvo = "chancePerEvo",
     chanceFormula = "chanceFormula",
     delayMin = "delayMin",
-    delayMax = "delayMax"
+    delayMax = "delayMax",
+    maxRevives = "maxRevives"
 }
 
 ---@class ReviveQueueTickObject
@@ -42,6 +43,7 @@ local CommandSettingNames = {
 ---@field force LuaForce
 ---@field surface LuaSurface
 ---@field position Position
+---@field previousRevives uint
 
 ---@class ForceReviveChanceObject
 ---@field reviveChance double @ Number between 0 and 1.
@@ -61,6 +63,7 @@ local CommandSettingNames = {
 ---@field chanceFormula string
 ---@field delayMin Tick @ Range of >= 0.
 ---@field delayMax Tick @ Range of >= 0.
+---@field maxRevives uint
 
 BiterRevive.CreateGlobals = function()
     global.reviveQueue = global.reviveQueue or {} ---@type table<Tick, ReviveQueueTickObject[]> @ This will be a sparse table at both the Tick key level and in the array of ReviveQueueTickObjects once they start to be processed.
@@ -69,6 +72,7 @@ BiterRevive.CreateGlobals = function()
     global.commands = global.commands or {} ---@type table<Id, CommandDetails>
     global.commandsNextId = global.commandsNextId or 0 ---@type uint
     global.nextCommandExpireTick = global.nextCommandExpireTick or 0 ---@type Tick @ Resets to 0 if no next expiring command.
+    global.unitReviveCount = global.unitReviveCount or {} ---@type table<UnitNumber, uint> @ A table of the revived unit number and the number of previous revives its had.
 
     global.evolutionRequirementMin = global.evolutionRequirementMin or 0 ---@type double @ Range of 0 to 1.
     global.evolutionRequirementMax = global.evolutionRequirementMax or 0 ---@type double @ Range of 0 to 1.
@@ -77,6 +81,7 @@ BiterRevive.CreateGlobals = function()
     global.reviveChancePerEvoNumber = global.reviveChancePerEvoNumber or 0 ---@type double @ Range of 0 to 100.
     global.reviveDelayMin = global.reviveDelayMin or 0 ---@type Tick @ Range of >= 0.
     global.reviveDelayMax = global.reviveDelayMax or 0 ---@type Tick @ Range of >= 0.
+    global.maxRevivesPerUnit = global.maxRevivesPerUnit or 0 ---@type uint @ 0 is infinite.
 
     global.modSettings_evolutionRequirementMin = global.modSettings_evolutionRequirementMin or 0 ---@type double @ Range of 0 to 1.
     global.modSettings_evolutionRequirementMax = global.modSettings_evolutionRequirementMax or 0 ---@type double @ Range of 0 to 1.
@@ -85,6 +90,7 @@ BiterRevive.CreateGlobals = function()
     global.modSettings_reviveChancePerEvo = global.modSettings_reviveChancePerEvo or 0 ---@type double @ Range of 0 to 100.
     global.modSettings_reviveDelayMin = global.modSettings_reviveDelayMin or 0 ---@type Tick @ Range of >= 0.
     global.modSettings_reviveDelayMax = global.modSettings_reviveDelayMax or 0 ---@type Tick @ Range of >= 0.
+    global.modSettings_maxRevivesPerUnit = global.modSettings_maxRevivesPerUnit or 0 ---@type uint
 
     global.blacklistedPrototypeNames = global.blacklistedPrototypeNames or {} ---@type table<string, True> @ The key is blacklisted prototype name, with a value of true.
     global.raw_BlacklistedPrototypeNames = global.raw_BlacklistedPrototypeNames or "" ---@type string @ The raw setting value.
@@ -115,7 +121,9 @@ BiterRevive.OnSettingChanged = function(event)
 
     local updateAllForceData = false
 
+    ------------------------------------------------------------
     -- These settings need processing to establish the current value as RCON commands can affect the final value in global.
+    ------------------------------------------------------------
     if event == nil or event.setting == "biter_revive-evolution_percent_minimum" then
         local settingValue = settings.global["biter_revive-evolution_percent_minimum"].value
         global.modSettings_evolutionRequirementMin = settingValue / 100
@@ -171,8 +179,15 @@ BiterRevive.OnSettingChanged = function(event)
         global.modSettings_reviveDelayMax = settingValue * 60
         BiterRevive.CalculateCurrentDelayMaximum()
     end
+    if event == nil or event.setting == "biter_revive-maximum_revives_per_unit" then
+        local settingValue = settings.global["biter_revive-maximum_revives_per_unit"].value
+        global.modSettings_maxRevivesPerUnit = settingValue
+        BiterRevive.CalculateCurrentMaxRevivesPerUnit()
+    end
 
+    ------------------------------------------------------------
     -- These settings just need caching as can't be overridden by RCON command.
+    ------------------------------------------------------------
     if event == nil or event.setting == "biter_revive-revives_per_second" then
         local settingValue = settings.global["biter_revive-revives_per_second"].value
         -- Make the revivesPerCycle be a round part of the total, with the nStartOfSecond having the left over odd count.
@@ -254,14 +269,25 @@ BiterRevive.OnEntityDied = function(event)
     -- Currently only even so filtered to "type = unit" and entity will always be valid as nothing within the mod can invalid it.
     local entity = event.entity
 
+    -- Have to get unit_number to get any preivous revive count passed on from preivous iterations of the unit. Always clear the table entry to stop it infinitely growing. Do the clear here rather than in every return block for sanity.
+    local entity_unitNumber = entity.unit_number
+    local previousRevives = global.unitReviveCount[entity_unitNumber] or 0
+    global.unitReviveCount[entity_unitNumber] = nil
+
     local entity_name = entity.name
+    -- Check if the prototype name is blacklisted.
     if global.blacklistedPrototypeNames[entity_name] ~= nil then
+        return
+    end
+
+    -- If there is a unit revive limit check if the unit has reached it.
+    if global.maxRevivesPerUnit ~= 0 and previousRevives == global.maxRevivesPerUnit then
         return
     end
 
     local unitsForce = entity.force
     local unitsForce_index = unitsForce.index
-
+    -- Check if the force is blacklisted.
     if global.blacklisedForceIds[unitsForce_index] ~= nil then
         return
     end
@@ -295,7 +321,8 @@ BiterRevive.OnEntityDied = function(event)
         force = unitsForce,
         forceId = unitsForce_index,
         surface = entity.surface,
-        position = entity.position
+        position = entity.position,
+        previousRevives = previousRevives
     }
 
     -- Work out how much delay this will have and what grouping tick it should go in to.
@@ -380,6 +407,7 @@ end
 --- Process any current queue of biter revives and any expiring commands. Called once every DelayGroupingTicks ticks.
 ---@param event NthTickEventData
 BiterRevive.ProcessTasks = function(event)
+    --TODO: put this in to 2 seperate functions for readability.
     -- Process any expired commands first if any have expired (quite rare event).
     if global.nextCommandExpireTick ~= 0 and event.tick >= global.nextCommandExpireTick then
         local nextCommandExpireTick = 0 ---@type Tick
@@ -470,6 +498,11 @@ BiterRevive.ProcessTasks = function(event)
                             raise_built = true
                         }
                     end
+                end
+
+                -- Record to revive count for the new unit.
+                if revivedBiter ~= nil then
+                    global.unitReviveCount[revivedBiter.unit_number] = reviveDetails.previousRevives + 1
                 end
 
                 -- Remove this revive from the current tick as done.
@@ -600,20 +633,18 @@ BiterRevive.CallUpdateFunctionsForCommandDetails = function(commandDetails, curr
     end
 end
 
----------------------------------------------------------------------------------------------------------------------------
---      These Calculate functions aren't very effecient, but they will run very infrequently over small data sets.       --
----------------------------------------------------------------------------------------------------------------------------
+-- These Calculate functions aren't very effecient, but they will run very infrequently over small data sets.
 BiterRevive.CalculateCurrentEvolutionMinimum = function()
-    global.evolutionRequirementMin = BiterRevive.CalculateCurrentValue(CommandSettingNames.evoMin, "min", "modSettings_evolutionRequirementMin")
+    global.evolutionRequirementMin = BiterRevive.CalculateCurrentValue(CommandSettingNames.evoMin, "min", "modSettings_evolutionRequirementMin", false)
 end
 BiterRevive.CalculateCurrentEvolutionMaximum = function()
-    global.evolutionRequirementMax = BiterRevive.CalculateCurrentValue(CommandSettingNames.evoMax, "max", "modSettings_evolutionRequirementMax")
+    global.evolutionRequirementMax = BiterRevive.CalculateCurrentValue(CommandSettingNames.evoMax, "max", "modSettings_evolutionRequirementMax", false)
 end
 BiterRevive.CalculateCurrentChanceBase = function()
-    global.reviveChanceBaseValue = BiterRevive.CalculateCurrentValue(CommandSettingNames.chanceBase, "max", "modSettings_reviveChanceBaseValue")
+    global.reviveChanceBaseValue = BiterRevive.CalculateCurrentValue(CommandSettingNames.chanceBase, "max", "modSettings_reviveChanceBaseValue", false)
 end
 BiterRevive.CalculateCurrentChancePerEvolution = function()
-    global.reviveChancePerEvoNumber = BiterRevive.CalculateCurrentValue(CommandSettingNames.chancePerEvo, "max", "modSettings_reviveChancePerEvo")
+    global.reviveChancePerEvoNumber = BiterRevive.CalculateCurrentValue(CommandSettingNames.chancePerEvo, "max", "modSettings_reviveChancePerEvo", false)
 end
 BiterRevive.CalculateCurrentChanceFormula = function()
     -- Is special in that we record the first highest priority formula we find and use that.
@@ -642,17 +673,22 @@ BiterRevive.CalculateCurrentChanceFormula = function()
     global.reviveChancePerEvoPercentFormula = currentFormula or ""
 end
 BiterRevive.CalculateCurrentDelayMinimum = function()
-    global.reviveDelayMin = BiterRevive.CalculateCurrentValue(CommandSettingNames.delayMin, "min", "modSettings_reviveDelayMin")
+    global.reviveDelayMin = BiterRevive.CalculateCurrentValue(CommandSettingNames.delayMin, "min", "modSettings_reviveDelayMin", false)
 end
 BiterRevive.CalculateCurrentDelayMaximum = function()
-    global.reviveDelayMax = BiterRevive.CalculateCurrentValue(CommandSettingNames.delayMax, "max", "modSettings_reviveDelayMax")
+    global.reviveDelayMax = BiterRevive.CalculateCurrentValue(CommandSettingNames.delayMax, "max", "modSettings_reviveDelayMax", false)
 end
+BiterRevive.CalculateCurrentMaxRevivesPerUnit = function()
+    global.maxRevivesPerUnit = BiterRevive.CalculateCurrentValue(CommandSettingNames.maxRevives, "max", "modSettings_maxRevivesPerUnit", true)
+end
+
 --- Generic processing of settings.
 ---@param settingName CommandSettingNames
 ---@param minOrMax "'min'"|"'max'" @ If this uses the min or max value for multiple enforce or base priority commands.
 ---@param modSettingCacheName string @ The global cache value of the mod setting for use if no enforced or base commands.
+---@param zeroIsInfinitelyLarge boolean @ If true then a zero value is the largest value at infinitely large.
 ---@return number currentValue
-BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCacheName)
+BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCacheName, zeroIsInfinitelyLarge)
     local currentValue
 
     -- Sort the active commands in to their priority types for this setting.
@@ -671,6 +707,9 @@ BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCa
         else
             -- Multiple commands so get the lowest/highest based on setting type.
             for _, value in pairs(commandsForSetting.enforced) do
+                if zeroIsInfinitelyLarge and value == 0 then
+                    value = 4294967295
+                end
                 if currentValue == nil then
                     currentValue = value
                 elseif minOrMax == "min" and value < currentValue then
@@ -690,6 +729,9 @@ BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCa
         else
             -- Multiple commands so get the lowest/highest based on setting type.
             for _, value in pairs(commandsForSetting.base) do
+                if zeroIsInfinitelyLarge and value == 0 then
+                    value = 4294967295
+                end
                 if currentValue == nil then
                     currentValue = value
                 elseif minOrMax == "min" and value < currentValue then
@@ -702,10 +744,16 @@ BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCa
     elseif #commandsForSetting.base == 0 then
         -- No "base" commands so use the mod setting for the initial value.
         currentValue = global[modSettingCacheName]
+        if zeroIsInfinitelyLarge and currentValue == 0 then
+            currentValue = 4294967295
+        end
     end
 
     -- Apply any "add" commands
     for _, value in pairs(commandsForSetting.add) do
+        if zeroIsInfinitelyLarge and value == 0 then
+            value = 4294967295
+        end
         currentValue = currentValue + value
     end
 
@@ -784,6 +832,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
     if chanceFormula ~= nil and chanceFormula == "" then
         chanceFormula = nil
     end
+    -- TODO: if value isn't bil then check the formula is valid like we do with mod settings. BiterRevive.GetValdiatedFormulaString()
 
     local delayMinSeconds_raw = settings.delayMin ---@type Second
     if not Commands.ParseNumberArgument(delayMinSeconds_raw, "integer", false, command.name, "delayMin") then
@@ -803,8 +852,14 @@ BiterRevive.OnCommand_AddModifier = function(command)
         delayMax = delayMaxSeconds_raw * 60
     end
 
+    -- No modifier on this one.
+    local maxRevives = settings.maxRevives ---@type uint
+    if not Commands.ParseNumberArgument(maxRevives, "integer", false, command.name, "maxRevives") then
+        return
+    end
+
     -- Check that one or more settings where included, otherwise the command will do nothing.
-    if evoMin == nil and evoMax == nil and chanceBase == nil and chancePerEvo == nil and chanceFormula == nil and delayMin == nil and delayMax == nil then
+    if evoMin == nil and evoMax == nil and chanceBase == nil and chancePerEvo == nil and chanceFormula == nil and delayMin == nil and delayMax == nil and maxRevives == nil then
         game.print(errorMessageStart .. "no actual setting was included within the settings table.", Colors.red)
         return
     end
@@ -823,7 +878,8 @@ BiterRevive.OnCommand_AddModifier = function(command)
         chancePerEvo = chancePerEvo,
         chanceFormula = chanceFormula,
         delayMin = delayMin,
-        delayMax = delayMax
+        delayMax = delayMax,
+        maxRevives = maxRevives
     }
     global.commands[commandDetails.id] = commandDetails
 
@@ -849,13 +905,14 @@ BiterRevive.OnCommand_DumptStateData = function(command)
     dumptext = dumptext .. "reviveChancePerEvoPercentFormula, " .. tostring(global.modSettings_reviveChancePerEvoPercentFormula) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMin, " .. tostring(global.modSettings_reviveDelayMin) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMax, " .. tostring(global.modSettings_reviveDelayMax) .. "\r\n"
+    dumptext = dumptext .. "maxRevivesPerUnit, " .. tostring(global.modSettings_maxRevivesPerUnit) .. "\r\n"
 
     -- Commands
     dumptext = dumptext .. "\r\n\r\n"
     dumptext = dumptext .. "Commands" .. "\r\n"
-    dumptext = dumptext .. "id, priority, duration, removalTick, evoMin, evoMax, chanceBase, chancePerEvo, chanceFormula, delayMin, delayMax" .. "\r\n"
+    dumptext = dumptext .. "id, priority, duration, removalTick, evoMin, evoMax, chanceBase, chancePerEvo, chanceFormula, delayMin, delayMax, maxRevives" .. "\r\n"
     for _, commandDetails in pairs(global.commands) do
-        dumptext = dumptext .. tostring(commandDetails.id) .. ", " .. tostring(commandDetails.priority) .. ", " .. tostring(commandDetails.duration) .. ", " .. tostring(commandDetails.removalTick) .. ", " .. tostring(commandDetails.evoMin) .. ", " .. tostring(commandDetails.evoMax) .. ", " .. tostring(commandDetails.chanceBase) .. ", " .. tostring(commandDetails.chancePerEvo) .. ", " .. tostring(commandDetails.chanceFormula) .. ", " .. tostring(commandDetails.delayMin) .. ", " .. tostring(commandDetails.delayMax) .. "\r\n"
+        dumptext = dumptext .. tostring(commandDetails.id) .. ", " .. tostring(commandDetails.priority) .. ", " .. tostring(commandDetails.duration) .. ", " .. tostring(commandDetails.removalTick) .. ", " .. tostring(commandDetails.evoMin) .. ", " .. tostring(commandDetails.evoMax) .. ", " .. tostring(commandDetails.chanceBase) .. ", " .. tostring(commandDetails.chancePerEvo) .. ", " .. tostring(commandDetails.chanceFormula) .. ", " .. tostring(commandDetails.delayMin) .. ", " .. tostring(commandDetails.delayMax) .. ", " .. tostring(commandDetails.maxRevives) .. "\r\n"
     end
 
     -- Runtime settings
@@ -868,6 +925,7 @@ BiterRevive.OnCommand_DumptStateData = function(command)
     dumptext = dumptext .. "reviveChancePerEvoPercentFormula, " .. tostring(global.reviveChancePerEvoPercentFormula) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMin, " .. tostring(global.reviveDelayMin) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMax, " .. tostring(global.reviveDelayMax) .. "\r\n"
+    dumptext = dumptext .. "maxRevivesPerUnit, " .. tostring(global.maxRevivesPerUnit) .. "\r\n"
 
     -- Write out the file to disk and message the player.
     game.write_file("biter_revive_state_data.csv", dumptext, false, command.player_index)

@@ -1,3 +1,4 @@
+-- Settings that have RCON commands.
 data:extend(
     {
         {
@@ -61,12 +62,26 @@ data:extend(
             order = "1007"
         },
         {
+            name = "biter_revive-maximum_revives_per_unit",
+            type = "int-setting",
+            default_value = 0,
+            minimum_value = 0,
+            setting_type = "runtime-global",
+            order = "1008"
+        }
+    }
+)
+
+-- Settings without RCON commands.
+data:extend(
+    {
+        {
             name = "biter_revive-revives_per_second",
             type = "int-setting",
             default_value = 50,
             minimum_value = 0,
             setting_type = "runtime-global",
-            order = "1008"
+            order = "2000"
         },
         {
             name = "biter_revive-blacklisted_prototype_names",
