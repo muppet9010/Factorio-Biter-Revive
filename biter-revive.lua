@@ -1,9 +1,7 @@
 local BiterRevive = {}
-local Events = require("utility/events")
 local Utils = require("utility/utils")
 local Colors = require("utility/colors")
 local Commands = require("utility/commands")
-local EventScheduler = require("utility/event-scheduler")
 local math_min, math_max, math_floor, math_random = math.min, math.max, math.floor, math.random
 
 local DelayGroupingTicks = 15 -- How many ticks between each goup of biters to revive.
@@ -70,6 +68,7 @@ BiterRevive.CreateGlobals = function()
     global.forcesReviveChance = global.forcesReviveChance or {} ---@type table<Id, ForceReviveChanceObject> @ A table of force indexes and their revival chance data.
     global.commands = global.commands or {} ---@type table<Id, CommandDetails>
     global.commandsNextId = global.commandsNextId or 0 ---@type uint
+    global.nextCommandExpireTick = global.nextCommandExpireTick or 0 ---@type Tick @ Resets to 0 if no next expiring command.
 
     global.evolutionRequirementMin = global.evolutionRequirementMin or 0 ---@type double @ Range of 0 to 1.
     global.evolutionRequirementMax = global.evolutionRequirementMax or 0 ---@type double @ Range of 0 to 1.
@@ -100,13 +99,13 @@ BiterRevive.OnStartup = function()
 end
 
 BiterRevive.OnLoad = function()
-    Events.RegisterHandlerEvent(defines.events.on_entity_died, "BiterRevive.OnEntityDied", BiterRevive.OnEntityDied, {{filter = "type", type = "unit"}})
-    script.on_nth_tick(DelayGroupingTicks, BiterRevive.ProcessQueue)
-    Events.RegisterHandlerEvent(defines.events.on_forces_merged, "BiterRevive.OnForcesMerged", BiterRevive.OnForcesMerged)
-    Events.RegisterHandlerEvent(defines.events.on_surface_deleted, "BiterRevive.OnSurfaceRemoved", BiterRevive.OnSurfaceRemoved)
-    Events.RegisterHandlerEvent(defines.events.on_surface_cleared, "BiterRevive.OnSurfaceRemoved", BiterRevive.OnSurfaceRemoved)
+    -- Don't use Event libraries as simple usage case and not needed overheads in profiler.
+    script.on_nth_tick(DelayGroupingTicks, BiterRevive.ProcessTasks)
+    script.on_event(defines.events.on_entity_died, BiterRevive.OnEntityDied, {{filter = "type", type = "unit"}})
+    script.on_event(defines.events.on_forces_merged, BiterRevive.OnForcesMerged)
+    script.on_event(defines.events.on_surface_deleted, BiterRevive.OnSurfaceRemoved)
+    script.on_event(defines.events.on_surface_cleared, BiterRevive.OnSurfaceRemoved)
     Commands.Register("biter_revive_add_modifier", {"command.biter_revive_add_modifier"}, BiterRevive.OnCommand_AddModifier, true)
-    EventScheduler.RegisterScheduledEventType("BiterRevive.Scheduled_RemoveCommand", BiterRevive.Scheduled_RemoveCommand)
     Commands.Register("biter_revive_dump_state_data", {"command.biter_revive_dump_state_data"}, BiterRevive.OnCommand_DumptStateData, true)
 end
 
@@ -378,9 +377,46 @@ BiterRevive.UpdateAllForcesData = function(currentTick)
     end
 end
 
---- Process any current queue of biter revives. Called once every DelayGroupingTicks ticks.
+--- Process any current queue of biter revives and any expiring commands. Called once every DelayGroupingTicks ticks.
 ---@param event NthTickEventData
-BiterRevive.ProcessQueue = function(event)
+BiterRevive.ProcessTasks = function(event)
+    -- Process any expired commands first if any have expired (quite rare event).
+    if global.nextCommandExpireTick ~= 0 and event.tick >= global.nextCommandExpireTick then
+        local nextCommandExpireTick = 0 ---@type Tick
+        local commandDetails  ---@type CommandDetails
+        local removeIndex  ---@type boolean
+
+        -- Work through the commands lookign for any that have expired. As its a sparse array have to iterate carefully.
+        local commandDetailsIndex = next(global.commands)
+        while commandDetailsIndex ~= nil do
+            commandDetails = global.commands[commandDetailsIndex]
+
+            -- Identify if a command has expired and should be removed.
+            if commandDetails.removalTick <= event.tick then
+                removeIndex = commandDetailsIndex
+            else
+                removeIndex = nil
+                -- If its not being removed then track the next command to be removed so we can set the global again.
+                if nextCommandExpireTick == 0 or commandDetails.removalTick < nextCommandExpireTick then
+                    nextCommandExpireTick = commandDetails.removalTick
+                end
+            end
+
+            -- Get the next entry in the table before we do anything.
+            commandDetailsIndex = next(global.commands, commandDetailsIndex)
+
+            -- Remove an expired entry after we have got the next one to avoid nil index errors. Also update the current value post its removal.
+            if removeIndex then
+                global.commands[removeIndex] = nil
+                BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetails, event.tick)
+            end
+        end
+
+        global.nextCommandExpireTick = nextCommandExpireTick
+    end
+
+    -- Process the queued revives last as if theres nothing outstanding they will terminate the function.
+
     -- If nothing to do just abort.
     if next(global.reviveQueue) == nil then
         return
@@ -791,23 +827,12 @@ BiterRevive.OnCommand_AddModifier = function(command)
     }
     global.commands[commandDetails.id] = commandDetails
 
-    -- Schedule removal from commands table at end of duration.
-    EventScheduler.ScheduleEventOnce(commandDetails.removalTick, "BiterRevive.Scheduled_RemoveCommand", commandDetails.id)
-
-    BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetails, command.tick)
-end
-
---- Scheduled to remove a command form the commands list.
----@param event UtilityScheduledEvent_CallbackObject
-BiterRevive.Scheduled_RemoveCommand = function(event)
-    local commandDetailsToRemove = global.commands[event.instanceId]
-    if commandDetailsToRemove == nil then
-        -- Command already remvoed by something else so nothing further to do.
-        return
+    -- If this command is the next expiring then update the check tick flag.
+    if commandDetails.removalTick == 0 or commandDetails.removalTick < global.nextCommandExpireTick then
+        global.nextCommandExpireTick = commandDetails.removalTick
     end
 
-    global.commands[event.instanceId] = nil
-    BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetailsToRemove, event.tick)
+    BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetails, command.tick)
 end
 
 --- Dumps the mod setting cache, active commands and runtime setting values to a text file on the players pc.

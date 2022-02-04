@@ -1,5 +1,4 @@
 local BiterRevive = require("biter-revive")
-local EventScheduler = require("utility/event-scheduler")
 
 local function CreateGlobals()
     BiterRevive.CreateGlobals()
@@ -27,5 +26,3 @@ script.on_init(OnStartup)
 script.on_configuration_changed(OnStartup)
 script.on_event(defines.events.on_runtime_mod_setting_changed, OnSettingChanged)
 script.on_load(OnLoad)
-
-EventScheduler.RegisterScheduler()
