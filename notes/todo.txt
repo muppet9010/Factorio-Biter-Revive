@@ -1,5 +1,4 @@
-- Reshuffle functions to make them easier to find.
-
+- Any invalid settings at map startup the error messages aren't visible.
 
 - Mod setting for zzz (configurable text) floating text over units delayed for reviving when they are delayed for more than 2 (test this looks right) seconds. Have extra option to include a countdown against it with a warning it will impact UPS.
 

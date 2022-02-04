@@ -71,11 +71,12 @@ BiterRevive.CreateGlobals = function()
     global.reviveQueue = global.reviveQueue or {} ---@type table<Tick, ReviveQueueTickObject[]> @ This will be a sparse table at both the Tick key level and in the array of ReviveQueueTickObjects once they start to be processed.
     global.reviveDetailsByUnitNumber = global.reviveDetailsByUnitNumber or {} ---@type table<UnitNumber, ReviveQueueTickObject> @ A queued revive details object referenced by its unit number.
     global.reviveQueueNextTickToProcess = global.reviveQueueNextTickToProcess or 0 ---@type Tick @ The next tick in the queue that will be processed.
+    global.unitReviveCount = global.unitReviveCount or {} ---@type table<UnitNumber, uint> @ A table of the revived unit number and the number of previous revives its had.
     global.forcesReviveChance = global.forcesReviveChance or {} ---@type table<Id, ForceReviveChanceObject> @ A table of force indexes and their revival chance data.
+
     global.commands = global.commands or {} ---@type table<Id, CommandDetails>
     global.commandsNextId = global.commandsNextId or 0 ---@type uint
     global.nextCommandExpireTick = global.nextCommandExpireTick or 0 ---@type Tick @ Resets to 0 if no next expiring command.
-    global.unitReviveCount = global.unitReviveCount or {} ---@type table<UnitNumber, uint> @ A table of the revived unit number and the number of previous revives its had.
 
     global.evolutionRequirementMin = global.evolutionRequirementMin or 0 ---@type double @ Range of 0 to 1.
     global.evolutionRequirementMax = global.evolutionRequirementMax or 0 ---@type double @ Range of 0 to 1.
@@ -117,154 +118,6 @@ BiterRevive.OnLoad = function()
     script.on_event(defines.events.on_surface_cleared, BiterRevive.OnSurfaceRemoved)
     Commands.Register("biter_revive_add_modifier", {"command.biter_revive_add_modifier"}, BiterRevive.OnCommand_AddModifier, true)
     Commands.Register("biter_revive_dump_state_data", {"command.biter_revive_dump_state_data"}, BiterRevive.OnCommand_DumptStateData, true)
-end
-
----@param event on_runtime_mod_setting_changed|null
-BiterRevive.OnSettingChanged = function(event)
-    -- Event is nil when this is called from OnStartup for a new game or a mod change. In this case we update all settings.
-
-    local updateAllForceData = false
-
-    ------------------------------------------------------------
-    -- These settings need processing to establish the current value as RCON commands can affect the final value in global.
-    ------------------------------------------------------------
-    if event == nil or event.setting == "biter_revive-evolution_percent_minimum" then
-        local settingValue = settings.global["biter_revive-evolution_percent_minimum"].value
-        global.modSettings_evolutionRequirementMin = settingValue / 100
-        BiterRevive.CalculateCurrentEvolutionMinimum()
-        updateAllForceData = true
-    end
-    if event == nil or event.setting == "biter_revive-evolution_percent_maximum" then
-        local settingValue = settings.global["biter_revive-evolution_percent_maximum"].value
-        global.modSettings_evolutionRequirementMax = settingValue / 100
-        BiterRevive.CalculateCurrentEvolutionMaximum()
-        updateAllForceData = true
-    end
-    if event == nil or event.setting == "biter_revive-chance_base_percent" then
-        local settingValue = settings.global["biter_revive-chance_base_percent"].value
-        global.modSettings_reviveChanceBaseValue = settingValue / 100
-        BiterRevive.CalculateCurrentChanceBase()
-        updateAllForceData = true
-    end
-    if event == nil or event.setting == "biter_revive-chance_percent_per_evolution_percent" then
-        local settingValue = settings.global["biter_revive-chance_percent_per_evolution_percent"].value
-        global.modSettings_reviveChancePerEvo = settingValue
-        BiterRevive.CalculateCurrentChancePerEvolution()
-        updateAllForceData = true
-    end
-    if event == nil or event.setting == "biter_revive-chance_formula" then
-        local settingValue = settings.global["biter_revive-chance_formula"].value
-        -- Check the formula and handle it specially.
-        if settingValue ~= "" then
-            -- Formula provided so needs checking.
-            local validatedFormulaString, errorMessage = BiterRevive.GetValdiatedFormulaString(settingValue)
-            if errorMessage == nil then
-                -- Formula is good to use.
-                global.modSettings_reviveChancePerEvoPercentFormula = validatedFormulaString
-            else
-                -- Formula is bad.
-                game.print("Biter Revive - Invalid revive chance formula provided in mod settings. Error: " .. errorMessage, Colors.red)
-                global.modSettings_reviveChancePerEvoPercentFormula = ""
-            end
-        else
-            -- No formula provided.
-            global.modSettings_reviveChancePerEvoPercentFormula = ""
-        end
-        BiterRevive.CalculateCurrentChanceFormula()
-        updateAllForceData = true
-    end
-    if event == nil or event.setting == "biter_revive-delay_seconds_minimum" then
-        local settingValue = settings.global["biter_revive-delay_seconds_minimum"].value
-        global.modSettings_reviveDelayMin = settingValue * 60
-        BiterRevive.CalculateCurrentDelayMinimum()
-    end
-    if event == nil or event.setting == "biter_revive-delay_seconds_maximum" then
-        local settingValue = settings.global["biter_revive-delay_seconds_maximum"].value
-        global.modSettings_reviveDelayMax = settingValue * 60
-        BiterRevive.CalculateCurrentDelayMaximum()
-    end
-    if event == nil or event.setting == "biter_revive-maximum_revives_per_unit" then
-        local settingValue = settings.global["biter_revive-maximum_revives_per_unit"].value
-        global.modSettings_maxRevivesPerUnit = settingValue
-        BiterRevive.CalculateCurrentMaxRevivesPerUnit()
-    end
-
-    ------------------------------------------------------------
-    -- These settings just need caching as can't be overridden by RCON command.
-    ------------------------------------------------------------
-    if event == nil or event.setting == "biter_revive-revives_per_second" then
-        local settingValue = settings.global["biter_revive-revives_per_second"].value
-        -- Make the revivesPerCycle be a round part of the total, with the nStartOfSecond having the left over odd count.
-        local groupsPerSecond = math_floor(60 / DelayGroupingTicks)
-        global.revivesPerCycle = math_floor(settingValue / groupsPerSecond)
-        global.revivesPerCycleOnStartOfSecond = global.revivesPerCycle + (settingValue - (global.revivesPerCycle * groupsPerSecond))
-    -- Nothing needs processing for this.
-    end
-    if event == nil or event.setting == "biter_revive-blacklisted_prototype_names" then
-        local settingValue = settings.global["biter_revive-blacklisted_prototype_names"].value
-
-        -- Check if was populated before as if not changed from before we don't want to confirm no change.
-        local changed = settingValue ~= global.raw_BlacklistedPrototypeNames
-        global.raw_BlacklistedPrototypeNames = settingValue
-
-        global.blacklistedPrototypeNames = Utils.SplitStringOnCharacters(settingValue, ",", true)
-
-        -- Only check and notify if the setting value was actually changed from before.
-        if changed then
-            -- Check each prototype name is valid and tell the playe about any that aren't. Don't block the update though as it does no harm.
-            local count = 1
-            for name in pairs(global.blacklistedPrototypeNames) do
-                local prototype = game.entity_prototypes[name]
-                if prototype == nil then
-                    game.print("Biter Revive - unrecognised prototype name '" .. name .. "' in blacklisted prototype names. Is number " .. tostring(count) .. " in the list.", Colors.red)
-                elseif prototype.type ~= "unit" then
-                    game.print("Biter Revive - prototype name '" .. name .. "' in blacklisted prototype names isn't type unit and so could never be revived anyways.", Colors.red)
-                elseif not prototype.has_flag("breaths-air") then
-                    game.print("Biter Revive - prototype name '" .. name .. "' in blacklisted prototype names doesn't have 'breaths-air' flag and so could never be revived anyways.", Colors.red)
-                end
-                count = count + 1
-            end
-
-            -- Confirm back to the player the prototypes identified from the list.
-            game.print("Biter Revive - Blacklisted prototype names changed to: " .. Utils.TableKeyToNumberedListString(global.blacklistedPrototypeNames))
-        end
-    end
-    if event == nil or event.setting == "biter_revive-blacklisted_force_names" then
-        local settingValue = settings.global["biter_revive-blacklisted_force_names"].value
-
-        -- Check if was populated before as if not changed from before we don't want to confirm no change.
-        local changed = settingValue ~= global.raw_BlacklistedForceNames
-        global.raw_BlacklistedForceNames = settingValue
-
-        local forceNames = Utils.SplitStringOnCharacters(settingValue, ",", true)
-        -- Blank the global before adding the new ones every time.
-        global.blacklisedForceIds = {}
-        -- Only add valid force Id's to the global.
-        for forceName in pairs(forceNames) do
-            local force = game.forces[forceName]
-            if force ~= nil then
-                global.blacklisedForceIds[force.index] = true
-            else
-                game.print("Biter Revive - Invalid force name provided: " .. forceName, Colors.red)
-            end
-        end
-
-        -- Only notify about the change if the setting was changed
-        if changed then
-            game.print("Biter Revive - Blacklisted force Ids changed to: " .. Utils.TableKeyToNumberedListString(forceNames))
-        end
-    end
-
-    -- Update all cached force data if its needed after settings changd.
-    if updateAllForceData then
-        local currentTick
-        if event == nil then
-            currentTick = game.tick
-        else
-            currentTick = event.tick
-        end
-        BiterRevive.UpdateAllForcesData(currentTick)
-    end
 end
 
 --- When a monitored entity type has died review it and if approperiate add it to the revive queue.
@@ -421,19 +274,16 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
     forceReviveChanceObject.lastCheckedTick = currentTick
 end
 
---- Called to update all forces cached data after a setting has been changed that will affect revive chances.
----@param currentTick Tick
-BiterRevive.UpdateAllForcesData = function(currentTick)
-    for _, forceReviveChanceObject in pairs(global.forcesReviveChance) do
-        BiterRevive.UpdateForceData(forceReviveChanceObject, currentTick)
-    end
-end
-
---- Process any current queue of biter revives and any expiring commands. Called once every DelayGroupingTicks ticks.
+--- Process anything needed on the cycle. current queue of biter revives and any expiring commands. Called once every DelayGroupingTicks ticks.
 ---@param event NthTickEventData
 BiterRevive.ProcessTasks = function(event)
-    --TODO: put this in to 2 seperate functions for readability.
-    -- Process any expired commands first if any have expired (quite rare event).
+    BiterRevive.CheckExpiredCommands(event)
+    BiterRevive.ProcessReviveQueue(event)
+end
+
+--- Check for any expired commands and handle them. Called once every DelayGroupingTicks ticks.
+---@param event NthTickEventData
+BiterRevive.CheckExpiredCommands = function(event)
     if global.nextCommandExpireTick ~= 0 and event.tick >= global.nextCommandExpireTick then
         local nextCommandExpireTick = 0 ---@type Tick
         local commandDetails  ---@type CommandDetails
@@ -467,9 +317,11 @@ BiterRevive.ProcessTasks = function(event)
 
         global.nextCommandExpireTick = nextCommandExpireTick
     end
+end
 
-    -- Process the queued revives last as if theres nothing outstanding they will terminate the function.
-
+--- Process any queued revives. Called once every DelayGroupingTicks ticks.
+---@param event NthTickEventData
+BiterRevive.ProcessReviveQueue = function(event)
     -- If nothing to do just abort.
     if next(global.reviveQueue) == nil then
         return
@@ -606,34 +458,6 @@ BiterRevive.OnSurfaceRemoved = function(event)
             end
         end
     end
-end
-
---- Checks a forumla string handles an evo value of 0% (0) and 100% (100). If it does returns the formula string, otherwise returns a blank string "" and the error message.
----@param formulaStringToTest string
----@return string validatedFormulaString @ Either the validated string or blank string "".
----@return string|null failureReason @ A message of why it failed validation or nil if it passed.
-BiterRevive.GetValdiatedFormulaString = function(formulaStringToTest)
-    for _, testEvo in pairs({0, 100}) do
-        local success, result =
-            pcall(
-            function()
-                return load("local evo = " .. testEvo .. "; return " .. formulaStringToTest)()
-            end
-        )
-        -- Check for erors and inspect the result.
-        if not success then
-            -- Test failed
-            return "", "syntax error of some type processing for test value: " .. tostring(testEvo)
-        else
-            -- Test succeded s check the result
-            if type(result) ~= "number" then
-                return "", "result wasn't a number for test value: " .. tostring(testEvo)
-            elseif result ~= result then
-                return "", "result was NaN (not a number) for test value: " .. tostring(testEvo)
-            end
-        end
-    end
-    return formulaStringToTest, nil
 end
 
 --- Call the approperiate update functions for the runtime globals based on which fields were included in the command details.
@@ -811,6 +635,162 @@ BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCa
     return currentValue
 end
 
+--- Called to update all forces cached data after a setting has been changed that will affect revive chances.
+---@param currentTick Tick
+BiterRevive.UpdateAllForcesData = function(currentTick)
+    for _, forceReviveChanceObject in pairs(global.forcesReviveChance) do
+        BiterRevive.UpdateForceData(forceReviveChanceObject, currentTick)
+    end
+end
+
+---@param event on_runtime_mod_setting_changed|null
+BiterRevive.OnSettingChanged = function(event)
+    -- Event is nil when this is called from OnStartup for a new game or a mod change. In this case we update all settings.
+
+    local updateAllForceData = false
+
+    ------------------------------------------------------------
+    -- These settings need processing to establish the current value as RCON commands can affect the final value in global.
+    ------------------------------------------------------------
+    if event == nil or event.setting == "biter_revive-evolution_percent_minimum" then
+        local settingValue = settings.global["biter_revive-evolution_percent_minimum"].value
+        global.modSettings_evolutionRequirementMin = settingValue / 100
+        BiterRevive.CalculateCurrentEvolutionMinimum()
+        updateAllForceData = true
+    end
+    if event == nil or event.setting == "biter_revive-evolution_percent_maximum" then
+        local settingValue = settings.global["biter_revive-evolution_percent_maximum"].value
+        global.modSettings_evolutionRequirementMax = settingValue / 100
+        BiterRevive.CalculateCurrentEvolutionMaximum()
+        updateAllForceData = true
+    end
+    if event == nil or event.setting == "biter_revive-chance_base_percent" then
+        local settingValue = settings.global["biter_revive-chance_base_percent"].value
+        global.modSettings_reviveChanceBaseValue = settingValue / 100
+        BiterRevive.CalculateCurrentChanceBase()
+        updateAllForceData = true
+    end
+    if event == nil or event.setting == "biter_revive-chance_percent_per_evolution_percent" then
+        local settingValue = settings.global["biter_revive-chance_percent_per_evolution_percent"].value
+        global.modSettings_reviveChancePerEvo = settingValue
+        BiterRevive.CalculateCurrentChancePerEvolution()
+        updateAllForceData = true
+    end
+    if event == nil or event.setting == "biter_revive-chance_formula" then
+        local settingValue = settings.global["biter_revive-chance_formula"].value
+        -- Check the formula and handle it specially.
+        if settingValue ~= "" then
+            -- Formula provided so needs checking.
+            local validatedFormulaString, errorMessage = BiterRevive.GetValdiatedFormulaString(settingValue)
+            if errorMessage == nil then
+                -- Formula is good to use.
+                global.modSettings_reviveChancePerEvoPercentFormula = validatedFormulaString
+            else
+                -- Formula is bad.
+                game.print("Biter Revive - Invalid revive chance formula provided in mod settings. Error: " .. errorMessage, Colors.red)
+                global.modSettings_reviveChancePerEvoPercentFormula = ""
+            end
+        else
+            -- No formula provided.
+            global.modSettings_reviveChancePerEvoPercentFormula = ""
+        end
+        BiterRevive.CalculateCurrentChanceFormula()
+        updateAllForceData = true
+    end
+    if event == nil or event.setting == "biter_revive-delay_seconds_minimum" then
+        local settingValue = settings.global["biter_revive-delay_seconds_minimum"].value
+        global.modSettings_reviveDelayMin = settingValue * 60
+        BiterRevive.CalculateCurrentDelayMinimum()
+    end
+    if event == nil or event.setting == "biter_revive-delay_seconds_maximum" then
+        local settingValue = settings.global["biter_revive-delay_seconds_maximum"].value
+        global.modSettings_reviveDelayMax = settingValue * 60
+        BiterRevive.CalculateCurrentDelayMaximum()
+    end
+    if event == nil or event.setting == "biter_revive-maximum_revives_per_unit" then
+        local settingValue = settings.global["biter_revive-maximum_revives_per_unit"].value
+        global.modSettings_maxRevivesPerUnit = settingValue
+        BiterRevive.CalculateCurrentMaxRevivesPerUnit()
+    end
+
+    ------------------------------------------------------------
+    -- These settings just need caching as can't be overridden by RCON command.
+    ------------------------------------------------------------
+    if event == nil or event.setting == "biter_revive-revives_per_second" then
+        local settingValue = settings.global["biter_revive-revives_per_second"].value
+        -- Make the revivesPerCycle be a round part of the total, with the nStartOfSecond having the left over odd count.
+        local groupsPerSecond = math_floor(60 / DelayGroupingTicks)
+        global.revivesPerCycle = math_floor(settingValue / groupsPerSecond)
+        global.revivesPerCycleOnStartOfSecond = global.revivesPerCycle + (settingValue - (global.revivesPerCycle * groupsPerSecond))
+    -- Nothing needs processing for this.
+    end
+    if event == nil or event.setting == "biter_revive-blacklisted_prototype_names" then
+        local settingValue = settings.global["biter_revive-blacklisted_prototype_names"].value
+
+        -- Check if was populated before as if not changed from before we don't want to confirm no change.
+        local changed = settingValue ~= global.raw_BlacklistedPrototypeNames
+        global.raw_BlacklistedPrototypeNames = settingValue
+
+        global.blacklistedPrototypeNames = Utils.SplitStringOnCharacters(settingValue, ",", true)
+
+        -- Only check and notify if the setting value was actually changed from before.
+        if changed then
+            -- Check each prototype name is valid and tell the playe about any that aren't. Don't block the update though as it does no harm.
+            local count = 1
+            for name in pairs(global.blacklistedPrototypeNames) do
+                local prototype = game.entity_prototypes[name]
+                if prototype == nil then
+                    game.print("Biter Revive - unrecognised prototype name '" .. name .. "' in blacklisted prototype names. Is number " .. tostring(count) .. " in the list.", Colors.red)
+                elseif prototype.type ~= "unit" then
+                    game.print("Biter Revive - prototype name '" .. name .. "' in blacklisted prototype names isn't type unit and so could never be revived anyways.", Colors.red)
+                elseif not prototype.has_flag("breaths-air") then
+                    game.print("Biter Revive - prototype name '" .. name .. "' in blacklisted prototype names doesn't have 'breaths-air' flag and so could never be revived anyways.", Colors.red)
+                end
+                count = count + 1
+            end
+
+            -- Confirm back to the player the prototypes identified from the list.
+            game.print("Biter Revive - Blacklisted prototype names changed to: " .. Utils.TableKeyToNumberedListString(global.blacklistedPrototypeNames))
+        end
+    end
+    if event == nil or event.setting == "biter_revive-blacklisted_force_names" then
+        local settingValue = settings.global["biter_revive-blacklisted_force_names"].value
+
+        -- Check if was populated before as if not changed from before we don't want to confirm no change.
+        local changed = settingValue ~= global.raw_BlacklistedForceNames
+        global.raw_BlacklistedForceNames = settingValue
+
+        local forceNames = Utils.SplitStringOnCharacters(settingValue, ",", true)
+        -- Blank the global before adding the new ones every time.
+        global.blacklisedForceIds = {}
+        -- Only add valid force Id's to the global.
+        for forceName in pairs(forceNames) do
+            local force = game.forces[forceName]
+            if force ~= nil then
+                global.blacklisedForceIds[force.index] = true
+            else
+                game.print("Biter Revive - Invalid force name provided: " .. forceName, Colors.red)
+            end
+        end
+
+        -- Only notify about the change if the setting was changed
+        if changed then
+            game.print("Biter Revive - Blacklisted force Ids changed to: " .. Utils.TableKeyToNumberedListString(forceNames))
+        end
+    end
+
+    -- Update all cached force data if its needed after settings changd.
+    if updateAllForceData then
+        local currentTick
+        if event == nil then
+            currentTick = game.tick
+        else
+            currentTick = event.tick
+        end
+        BiterRevive.UpdateAllForcesData(currentTick)
+    end
+end
+
 --- Handler of the RCON command "biter_revive_add_modifier".
 ---@param command CustomCommandData
 BiterRevive.OnCommand_AddModifier = function(command)
@@ -951,6 +931,34 @@ BiterRevive.OnCommand_AddModifier = function(command)
     end
 
     BiterRevive.CallUpdateFunctionsForCommandDetails(commandDetails, command.tick)
+end
+
+--- Checks a forumla string handles an evo value of 0% (0) and 100% (100). If it does returns the formula string, otherwise returns a blank string "" and the error message.
+---@param formulaStringToTest string
+---@return string validatedFormulaString @ Either the validated string or blank string "".
+---@return string|null failureReason @ A message of why it failed validation or nil if it passed.
+BiterRevive.GetValdiatedFormulaString = function(formulaStringToTest)
+    for _, testEvo in pairs({0, 100}) do
+        local success, result =
+            pcall(
+            function()
+                return load("local evo = " .. testEvo .. "; return " .. formulaStringToTest)()
+            end
+        )
+        -- Check for erors and inspect the result.
+        if not success then
+            -- Test failed
+            return "", "syntax error of some type processing for test value: " .. tostring(testEvo)
+        else
+            -- Test succeded s check the result
+            if type(result) ~= "number" then
+                return "", "result wasn't a number for test value: " .. tostring(testEvo)
+            elseif result ~= result then
+                return "", "result was NaN (not a number) for test value: " .. tostring(testEvo)
+            end
+        end
+    end
+    return formulaStringToTest, nil
 end
 
 --- Dumps the mod setting cache, active commands and runtime setting values to a text file on the players pc.
