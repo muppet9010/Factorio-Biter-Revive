@@ -2,7 +2,10 @@
 Version: 1.1.1
 Date: 2022-02-04
   Features:
+    - Add mod setting and command option to limit how many times the same biter can revive.
+    - Remove the corpses of a unit when it revives.
   Changes:
+    - Removed the requirement of units to have the "breaths-air" flag as irrelevent.
   Bugfixes:
   Info:
 ---------------------------------------------------------------------------------------------------

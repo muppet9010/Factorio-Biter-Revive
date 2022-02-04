@@ -13,7 +13,7 @@ Notes
 - Revive chance is a scale based on configurable settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
 - Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dieing.
 - Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the biter dies, but instead a fraction of a second later.
-- There is a mod setting to limit how mnay times the same unit can be revived. It defaults to unlimited. Its useful for cases of very high revive rate when you don't want the risk of near infinite revivals due to random chances.
+- There is a mod setting to limit how many times the same unit can be revived. It defaults to unlimited. Its useful for cases of very high revive rate when you don't want the risk of near infinite revivals due to random chances.
 
 
 
@@ -60,7 +60,7 @@ Commands are provided with a single JSON argument with the below structure:
   - chanceFormula = the revival chance formula as a text string - Equivalent of mod setting "Chance of revive formula". NOTE: only a single active command of the highest priority order will set the formula. The exact applied highest priority command will be random due to internal Lua table ordering. This isn't deemed an issue as the concept of adding raw formulas together or finding the largest formula in a mod wide abstract way doesn't make sense. Priority order is: enforced command, base command, mod setting, add command.
   - delayMin = the revive delay minimum in seconds as a number (integer), i.e. 0 = 0 seconds - equivalent to the mod setting "Revive delay minimum seconds".
   - delayMax = the revive delay maximum in seconds as a number (integer), i.e. 5 = 5 seconds - equivalent to the mod setting "Revive delay maximum seconds".
-  - maxRevives = the maxiumum number of times a single unit can be revived (integer), with 0 being unlimited - equivalent to the mod setting "Maximum revives per unit".
+  - maxRevives = the maxiumum number of times a single unit can be revived (integer), with 0 being unlimited (nearly) - equivalent to the mod setting "Maximum revives per unit".
 - priority = the priority for this command as a text string. Supported values "enforced", "base", "add".
 
 Example Commands with their JSON string:

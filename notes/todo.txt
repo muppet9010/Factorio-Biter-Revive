@@ -1,8 +1,13 @@
 - Reshuffle functions to make them easier to find.
+- Reduce force cache from 1 minute down to 10 seconds so that modded/script evolution changes will appear quickly.
 
 
 - Mod setting for zzz (configurable text) floating text over units delayed for reviving when they are delayed for more than 2 (test this looks right) seconds. Have extra option to include a countdown against it with a warning it will impact UPS.
-- Track biters marked for reviving corpses so we can remove them when the biter revives. Would need to monitor additional events to populate the corpse list and link the 2 events together.
 
 
 - Add a gif to the mod portal page at the top
+- Spell check readme and locale.
+
+
+
+/biter_revive_add_modifier {"duration":180, "settings":{ "maxRevives":1 }, "priority":"add"}

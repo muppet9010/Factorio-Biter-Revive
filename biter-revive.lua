@@ -38,12 +38,14 @@ local CommandSettingNames = {
 }
 
 ---@class ReviveQueueTickObject
+---@field unitNumber UnitNumber
 ---@field prototypeName string
 ---@field orientation RealOrientation
 ---@field force LuaForce
 ---@field surface LuaSurface
 ---@field position Position
 ---@field previousRevives uint
+---@field corpses LuaEntity[]
 
 ---@class ForceReviveChanceObject
 ---@field reviveChance double @ Number between 0 and 1.
@@ -67,6 +69,7 @@ local CommandSettingNames = {
 
 BiterRevive.CreateGlobals = function()
     global.reviveQueue = global.reviveQueue or {} ---@type table<Tick, ReviveQueueTickObject[]> @ This will be a sparse table at both the Tick key level and in the array of ReviveQueueTickObjects once they start to be processed.
+    global.reviveDetailsByUnitNumber = global.reviveDetailsByUnitNumber or {} ---@type table<UnitNumber, ReviveQueueTickObject> @ A queued revive details object referenced by its unit number.
     global.reviveQueueNextTickToProcess = global.reviveQueueNextTickToProcess or 0 ---@type Tick @ The next tick in the queue that will be processed.
     global.forcesReviveChance = global.forcesReviveChance or {} ---@type table<Id, ForceReviveChanceObject> @ A table of force indexes and their revival chance data.
     global.commands = global.commands or {} ---@type table<Id, CommandDetails>
@@ -108,6 +111,7 @@ BiterRevive.OnLoad = function()
     -- Don't use Event libraries as simple usage case and not needed overheads in profiler.
     script.on_nth_tick(DelayGroupingTicks, BiterRevive.ProcessTasks)
     script.on_event(defines.events.on_entity_died, BiterRevive.OnEntityDied, {{filter = "type", type = "unit"}})
+    script.on_event(defines.events.on_post_entity_died, BiterRevive.OnPostEntityDied, {{filter = "type", type = "unit"}})
     script.on_event(defines.events.on_forces_merged, BiterRevive.OnForcesMerged)
     script.on_event(defines.events.on_surface_deleted, BiterRevive.OnSurfaceRemoved)
     script.on_event(defines.events.on_surface_cleared, BiterRevive.OnSurfaceRemoved)
@@ -274,14 +278,14 @@ BiterRevive.OnEntityDied = function(event)
     local previousRevives = global.unitReviveCount[entity_unitNumber] or 0
     global.unitReviveCount[entity_unitNumber] = nil
 
-    local entity_name = entity.name
-    -- Check if the prototype name is blacklisted.
-    if global.blacklistedPrototypeNames[entity_name] ~= nil then
+    -- If there is a unit revive limit check if the unit has reached it.
+    if global.maxRevivesPerUnit ~= 0 and previousRevives >= global.maxRevivesPerUnit then
         return
     end
 
-    -- If there is a unit revive limit check if the unit has reached it.
-    if global.maxRevivesPerUnit ~= 0 and previousRevives == global.maxRevivesPerUnit then
+    local entity_name = entity.name
+    -- Check if the prototype name is blacklisted.
+    if global.blacklistedPrototypeNames[entity_name] ~= nil then
         return
     end
 
@@ -316,14 +320,18 @@ BiterRevive.OnEntityDied = function(event)
     -- Make the details object to be queued.
     ---@type ReviveQueueTickObject
     local reviveDetails = {
+        unitNumber = entity_unitNumber,
         prototypeName = entity_name,
         orientation = entity.orientation,
         force = unitsForce,
         forceId = unitsForce_index,
         surface = entity.surface,
-        position = entity.position,
+        position = nil, -- Populate by on_post_entity_died event as its a non API call then.
         previousRevives = previousRevives
     }
+
+    -- Store a reference to the reviveDetails as we will add to it from another event.
+    global.reviveDetailsByUnitNumber[entity_unitNumber] = reviveDetails
 
     -- Work out how much delay this will have and what grouping tick it should go in to.
     local delay = math_random(global.reviveDelayMin, global.reviveDelayMax)
@@ -336,6 +344,23 @@ BiterRevive.OnEntityDied = function(event)
         tickQueue = global.reviveQueue[delayGroupingTick]
     end
     table.insert(tickQueue, reviveDetails)
+end
+
+--- Called after the entity has died and the corpse is present.
+---@param event on_post_entity_died
+BiterRevive.OnPostEntityDied = function(event)
+    -- If no revive details then this event isn't for a unit that we care about.
+    local reviveDetails = global.reviveDetailsByUnitNumber[event.unit_number]
+    if reviveDetails == nil then
+        return
+    end
+
+    -- Populate the extra data we need from this event in to the reviveDetails.
+    reviveDetails.position = event.position
+    reviveDetails.corpses = event.corpses
+
+    -- Remove the revive details from its global lookup as its been handled.
+    global.reviveDetailsByUnitNumber[event.unit_number] = nil
 end
 
 --- Update the reviveChanceObject as required. Always updates the lastCheckedTick when run.
@@ -500,9 +525,15 @@ BiterRevive.ProcessTasks = function(event)
                     end
                 end
 
-                -- Record to revive count for the new unit.
+                -- If the unit was revived do some further tasks.
                 if revivedBiter ~= nil then
+                    -- Record the revive count for the new unit.
                     global.unitReviveCount[revivedBiter.unit_number] = reviveDetails.previousRevives + 1
+
+                    -- Remove any corpses for the revived unit.
+                    for _, corpse in pairs(reviveDetails.corpses) do
+                        corpse.destroy()
+                    end
                 end
 
                 -- Remove this revive from the current tick as done.
@@ -626,6 +657,9 @@ BiterRevive.CallUpdateFunctionsForCommandDetails = function(commandDetails, curr
     if commandDetails.delayMax ~= nil then
         BiterRevive.CalculateCurrentDelayMaximum()
     end
+    if commandDetails.maxRevives ~= nil then
+        BiterRevive.CalculateCurrentMaxRevivesPerUnit()
+    end
 
     -- Update all cached force data if its needed after settings changd.
     if updateAllForceData then
@@ -704,8 +738,11 @@ BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCa
         if #commandsForSetting.enforced == 1 then
             -- Just 1 command so set the value.
             currentValue = commandsForSetting.enforced[1]
+            if zeroIsInfinitelyLarge and currentValue == 0 then
+                currentValue = 4294967295
+            end
         else
-            -- Multiple commands so get the lowest/highest based on setting type.
+            -- Multiple commands so get the lowe st/highest based on setting type.
             for _, value in pairs(commandsForSetting.enforced) do
                 if zeroIsInfinitelyLarge and value == 0 then
                     value = 4294967295
@@ -726,6 +763,9 @@ BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCa
         if #commandsForSetting.base == 1 then
             -- Just 1 command so set the value.
             currentValue = commandsForSetting.base[1]
+            if zeroIsInfinitelyLarge and currentValue == 0 then
+                currentValue = 4294967295
+            end
         else
             -- Multiple commands so get the lowest/highest based on setting type.
             for _, value in pairs(commandsForSetting.base) do
@@ -832,7 +872,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
     if chanceFormula ~= nil and chanceFormula == "" then
         chanceFormula = nil
     end
-    -- TODO: if value isn't bil then check the formula is valid like we do with mod settings. BiterRevive.GetValdiatedFormulaString()
+    -- TODO: if value isn't nil then check the formula is valid like we do with mod settings. BiterRevive.GetValdiatedFormulaString()
 
     local delayMinSeconds_raw = settings.delayMin ---@type Second
     if not Commands.ParseNumberArgument(delayMinSeconds_raw, "integer", false, command.name, "delayMin") then
