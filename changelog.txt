@@ -7,8 +7,9 @@ Date: 2022-02-04
   Changes:
     - Removed the requirement of units to have the "breaths-air" flag as irrelevent.
     - Chance formula validation for command and mod settings enhanced to test 0 and 100 evolution values and to provide more detailed failure feedback.
-  Bugfixes:
     - Chance formula validated on command when missing before.
+    - Any mod setting errors present on map creation will now be printed to the screen a few moments after the game started. Before Factorio "lost" them.
+  Bugfixes:
   Info:
 ---------------------------------------------------------------------------------------------------
 Version: 1.1.0

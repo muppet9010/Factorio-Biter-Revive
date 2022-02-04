@@ -103,9 +103,32 @@ BiterRevive.CreateGlobals = function()
 
     global.revivesPerCycle = global.revivesPerCycle or 0 --- How many revives can be done per cycle. Every cycle in each second apart from the one excatly at the start of the second.
     global.revivesPerCycleOnStartOfSecond = global.revivesPerCycleOnStartOfSecond or 0 --- How many revives can be done on the cycle at the start of the second. This makes up for any odd dividing issues with the player setting being revives per second.
+
+    global.zeroTickErrors = global.zeroTickErrors or {} ---@type string[] @ Any errors raised during map startup (0 tick). They will be printed again on first non 0 tick cycle biter check cycle.
 end
 
 BiterRevive.OnStartup = function()
+    -- Special to print any startup setting error messages after tick 0. Only needed if its tick 0 now.
+    if game.tick == 0 then
+        script.on_nth_tick(
+            2,
+            function(event)
+                -- If its still tick 0 wait for later.
+                if event.tick == 0 then
+                    return
+                end
+
+                -- Print any errors and then remove them.
+                for _, errorMessage in pairs(global.zeroTickErrors) do
+                    game.print(errorMessage, Colors.lightred)
+                end
+                global.zeroTickErrors = {}
+
+                -- Deregister this event as never needed again.
+                script.on_nth_tick(2, nil)
+            end
+        )
+    end
 end
 
 BiterRevive.OnLoad = function()
@@ -249,7 +272,7 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
             )
 
             if not success then
-                game.print("Revive chance formula failed when being applied with 'evo' value of: " .. forceEvoAboveMin, Colors.red)
+                game.print("Revive chance formula failed when being applied with 'evo' value of: " .. forceEvoAboveMin, Colors.lightred)
                 chanceForEvo = 0
             end
         end
@@ -257,7 +280,7 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
         -- Check the value isn't a NaN.
         if chanceForEvo ~= chanceForEvo then
             -- reviveChance is NaN so set it to 0.
-            game.print("Revive chance result ended up as invalid number, error in mod setting value. The 'evo' above minimum was: " .. forceEvoAboveMin, Colors.red)
+            game.print("Revive chance result ended up as invalid number, error in mod setting value. The 'evo' above minimum was: " .. forceEvoAboveMin, Colors.lightred)
             chanceForEvo = 0
         end
 
@@ -648,6 +671,8 @@ BiterRevive.OnSettingChanged = function(event)
     -- Event is nil when this is called from OnStartup for a new game or a mod change. In this case we update all settings.
 
     local updateAllForceData = false
+    local settingErrorMessages = {} ---@type string[]
+    local settingErrorMessage  ---@type string
 
     ------------------------------------------------------------
     -- These settings need processing to establish the current value as RCON commands can affect the final value in global.
@@ -687,7 +712,9 @@ BiterRevive.OnSettingChanged = function(event)
                 global.modSettings_reviveChancePerEvoPercentFormula = validatedFormulaString
             else
                 -- Formula is bad.
-                game.print("Biter Revive - Invalid revive chance formula provided in mod settings. Error: " .. errorMessage, Colors.red)
+                settingErrorMessage = "Biter Revive - Invalid revive chance formula provided in mod settings so it's being ignored. Error: " .. errorMessage
+                game.print(settingErrorMessage, Colors.lightred)
+                table.insert(settingErrorMessages, settingErrorMessage)
                 global.modSettings_reviveChancePerEvoPercentFormula = ""
             end
         else
@@ -740,11 +767,13 @@ BiterRevive.OnSettingChanged = function(event)
             for name in pairs(global.blacklistedPrototypeNames) do
                 local prototype = game.entity_prototypes[name]
                 if prototype == nil then
-                    game.print("Biter Revive - unrecognised prototype name '" .. name .. "' in blacklisted prototype names. Is number " .. tostring(count) .. " in the list.", Colors.red)
+                    settingErrorMessage = "Biter Revive - unrecognised prototype name '" .. name .. "' in blacklisted prototype names. Is number " .. tostring(count) .. " in the list."
+                    game.print(settingErrorMessage, Colors.lightred)
+                    table.insert(settingErrorMessages, settingErrorMessage)
                 elseif prototype.type ~= "unit" then
-                    game.print("Biter Revive - prototype name '" .. name .. "' in blacklisted prototype names isn't type unit and so could never be revived anyways.", Colors.red)
-                elseif not prototype.has_flag("breaths-air") then
-                    game.print("Biter Revive - prototype name '" .. name .. "' in blacklisted prototype names doesn't have 'breaths-air' flag and so could never be revived anyways.", Colors.red)
+                    settingErrorMessage = "Biter Revive - prototype name '" .. name .. "' in blacklisted prototype names isn't of type 'unit' and so could never be revived anyways."
+                    game.print(settingErrorMessage, Colors.lightred)
+                    table.insert(settingErrorMessages, settingErrorMessage)
                 end
                 count = count + 1
             end
@@ -769,7 +798,9 @@ BiterRevive.OnSettingChanged = function(event)
             if force ~= nil then
                 global.blacklisedForceIds[force.index] = true
             else
-                game.print("Biter Revive - Invalid force name provided: " .. forceName, Colors.red)
+                settingErrorMessage = "Biter Revive - Invalid force name provided: " .. forceName
+                game.print(settingErrorMessage, Colors.lightred)
+                table.insert(settingErrorMessages, settingErrorMessage)
             end
         end
 
@@ -788,6 +819,11 @@ BiterRevive.OnSettingChanged = function(event)
             currentTick = event.tick
         end
         BiterRevive.UpdateAllForcesData(currentTick)
+    end
+
+    -- If its 0 tick (initial map start and there were errors add them to be written out after a few ticks)
+    if game.tick == 0 and #settingErrorMessages > 0 then
+        global.zeroTickErrors = settingErrorMessages
     end
 end
 
@@ -867,7 +903,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
             chanceFormula, errorMessage = BiterRevive.GetValdiatedFormulaString(chanceFormula_raw)
             if errorMessage ~= nil then
                 -- Formula is bad.
-                game.print(errorMessageStart .. "Invalid revive chance formula provided. Error: " .. errorMessage, Colors.red)
+                game.print(errorMessageStart .. "Invalid revive chance formula provided so it's being ignored. Error: " .. errorMessage, Colors.lightred)
                 return
             end
         else
@@ -902,7 +938,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
 
     -- Check that one or more settings where included, otherwise the command will do nothing.
     if evoMin == nil and evoMax == nil and chanceBase == nil and chancePerEvo == nil and chanceFormula == nil and delayMin == nil and delayMax == nil and maxRevives == nil then
-        game.print(errorMessageStart .. "no actual setting was included within the settings table.", Colors.red)
+        game.print(errorMessageStart .. "no actual setting was included within the settings table.", Colors.lightred)
         return
     end
 
