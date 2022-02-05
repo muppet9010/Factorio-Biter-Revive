@@ -34,6 +34,7 @@ local CommandSettingNames = {
     chanceFormula = "chanceFormula",
     delayMin = "delayMin",
     delayMax = "delayMax",
+    delayText = "delayText",
     maxRevives = "maxRevives"
 }
 
@@ -65,6 +66,7 @@ local CommandSettingNames = {
 ---@field chanceFormula string
 ---@field delayMin Tick @ Range of >= 0.
 ---@field delayMax Tick @ Range of >= 0.
+---@field delayText string @ nil or comma seperated string.
 ---@field maxRevives uint
 
 BiterRevive.CreateGlobals = function()
@@ -85,6 +87,7 @@ BiterRevive.CreateGlobals = function()
     global.reviveChancePerEvoNumber = global.reviveChancePerEvoNumber or 0 ---@type double @ Range of 0 to 100.
     global.reviveDelayMin = global.reviveDelayMin or 0 ---@type Tick @ Range of >= 0.
     global.reviveDelayMax = global.reviveDelayMax or 0 ---@type Tick @ Range of >= 0.
+    global.reviveDelayTexts = global.reviveDelayTexts or {} ---@type string[] @ An empty table if none.
     global.maxRevivesPerUnit = global.maxRevivesPerUnit or 0 ---@type uint @ 0 is infinite.
 
     global.modSettings_evolutionRequirementMin = global.modSettings_evolutionRequirementMin or 0 ---@type double @ Range of 0 to 1.
@@ -94,6 +97,7 @@ BiterRevive.CreateGlobals = function()
     global.modSettings_reviveChancePerEvo = global.modSettings_reviveChancePerEvo or 0 ---@type double @ Range of 0 to 100.
     global.modSettings_reviveDelayMin = global.modSettings_reviveDelayMin or 0 ---@type Tick @ Range of >= 0.
     global.modSettings_reviveDelayMax = global.modSettings_reviveDelayMax or 0 ---@type Tick @ Range of >= 0.
+    global.modSettings_reviveDelayText = global.modSettings_reviveDelayText or "" ---@type string @ A blank string is none or a comma seperated string.
     global.modSettings_maxRevivesPerUnit = global.modSettings_maxRevivesPerUnit or 0 ---@type uint
 
     global.blacklistedPrototypeNames = global.blacklistedPrototypeNames or {} ---@type table<string, True> @ The key is blacklisted prototype name, with a value of true.
@@ -234,6 +238,17 @@ BiterRevive.OnPostEntityDied = function(event)
     -- Populate the extra data we need from this event in to the reviveDetails.
     reviveDetails.position = event.position
     reviveDetails.corpses = event.corpses
+
+    -- Add the delay text if approperiate. Target it at the first corpse as this is hopefully the main one so when the corpse goes the text goes with it.
+    if #global.reviveDelayTexts > 0 and #reviveDetails.corpses > 0 then
+        local textString = global.reviveDelayTexts[math.random(1, #global.reviveDelayTexts)]
+        rendering.draw_text {
+            text = textString,
+            color = Colors.white,
+            surface = event.surface_index,
+            target = reviveDetails.corpses[1]
+        }
+    end
 
     -- Remove the revive details from its global lookup as its been handled.
     global.reviveDetailsByUnitNumber[event.unit_number] = nil
@@ -407,7 +422,10 @@ BiterRevive.ProcessReviveQueue = function(event)
 
                     -- Remove any corpses for the revived unit.
                     for _, corpse in pairs(reviveDetails.corpses) do
-                        corpse.destroy()
+                        -- Corpse could have been removed with water fill, building, scripted, etc.
+                        if corpse.valid then
+                            corpse.destroy()
+                        end
                     end
                 end
 
@@ -515,6 +533,9 @@ BiterRevive.CallUpdateFunctionsForCommandDetails = function(commandDetails, curr
     if commandDetails.delayMax ~= nil then
         BiterRevive.CalculateCurrentDelayMaximum()
     end
+    if commandDetails.delayText ~= nil then
+        BiterRevive.CalculateCurrentDelayText()
+    end
     if commandDetails.maxRevives ~= nil then
         BiterRevive.CalculateCurrentMaxRevivesPerUnit()
     end
@@ -569,6 +590,37 @@ BiterRevive.CalculateCurrentDelayMinimum = function()
 end
 BiterRevive.CalculateCurrentDelayMaximum = function()
     global.reviveDelayMax = BiterRevive.CalculateCurrentValue(CommandSettingNames.delayMax, "max", "modSettings_reviveDelayMax", false)
+end
+BiterRevive.CalculateCurrentDelayText = function()
+    -- Is special in that we record the first highest priority text string we find and use that.
+    local currentDelayText  ---@type string
+    local currentDelayTextPriorityOrderedIndex = 10 ---@type CommandPriorityOrderedIndex
+    for _, command in pairs(global.commands) do
+        -- Will be a non existant setting in the command and not an empty string like the mod setting.
+        if command[CommandSettingNames.delayText] ~= nil then
+            local commandPriorityOrderedIndex = CommandPriorityOrderedIndex[command.priority]
+            if commandPriorityOrderedIndex < currentDelayTextPriorityOrderedIndex then
+                currentDelayText = command.delayText
+                currentDelayTextPriorityOrderedIndex = commandPriorityOrderedIndex
+                if commandPriorityOrderedIndex == 1 then
+                    -- Nothing can be higher priority and we use the first one found of a priority.
+                    break
+                end
+            end
+        end
+    end
+
+    -- Check if the mod setting should set the delay text over an "add" command. The mod setting is stored as an empty string and not nil as its a global.
+    if currentDelayTextPriorityOrderedIndex > CommandPriorityOrderedIndex.modSetting and global.modSettings_reviveDelayText ~= "" then
+        currentDelayText = global.modSettings_reviveDelayText
+    end
+
+    -- Reset the texts and populate with the entries in the current comma seperated string value.
+    if currentDelayText ~= nil then
+        global.reviveDelayTexts = Utils.SplitStringOnCharacters(currentDelayText, ",", false)
+    else
+        global.reviveDelayTexts = {}
+    end
 end
 BiterRevive.CalculateCurrentMaxRevivesPerUnit = function()
     global.maxRevivesPerUnit = BiterRevive.CalculateCurrentValue(CommandSettingNames.maxRevives, "max", "modSettings_maxRevivesPerUnit", true)
@@ -733,6 +785,11 @@ BiterRevive.OnSettingChanged = function(event)
         local settingValue = settings.global["biter_revive-delay_seconds_maximum"].value
         global.modSettings_reviveDelayMax = settingValue * 60
         BiterRevive.CalculateCurrentDelayMaximum()
+    end
+    if event == nil or event.setting == "biter_revive-delay_text" then
+        local settingValue = settings.global["biter_revive-delay_text"].value
+        global.modSettings_reviveDelayText = settingValue
+        BiterRevive.CalculateCurrentDelayText()
     end
     if event == nil or event.setting == "biter_revive-maximum_revives_per_unit" then
         local settingValue = settings.global["biter_revive-maximum_revives_per_unit"].value
@@ -930,6 +987,20 @@ BiterRevive.OnCommand_AddModifier = function(command)
         delayMax = delayMaxSeconds_raw * 60
     end
 
+    local delayText_raw = settings.delayText ---@type string
+    if not Commands.ParseStringArgument(delayText_raw, false, command.name, "delayText") then
+        return
+    end
+    local delayText  ---@type string
+    if delayText_raw ~= nil then
+        if delayText_raw ~= "" then
+            delayText = delayText_raw
+        else
+            -- Set the delay text blank string to nil as its more logical to check commands with it as optional setting that way. People may enter it as a blank string as thats what the mod setting requires. The global cached mod setting uses a blank string and not nil however.
+            delayText = nil
+        end
+    end
+
     -- No modifier on this one.
     local maxRevives = settings.maxRevives ---@type uint
     if not Commands.ParseNumberArgument(maxRevives, "integer", false, command.name, "maxRevives") then
@@ -937,7 +1008,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
     end
 
     -- Check that one or more settings where included, otherwise the command will do nothing.
-    if evoMin == nil and evoMax == nil and chanceBase == nil and chancePerEvo == nil and chanceFormula == nil and delayMin == nil and delayMax == nil and maxRevives == nil then
+    if evoMin == nil and evoMax == nil and chanceBase == nil and chancePerEvo == nil and chanceFormula == nil and delayMin == nil and delayMax == nil and delayText == nil and maxRevives == nil then
         game.print(errorMessageStart .. "no actual setting was included within the settings table.", Colors.lightred)
         return
     end
@@ -957,12 +1028,13 @@ BiterRevive.OnCommand_AddModifier = function(command)
         chanceFormula = chanceFormula,
         delayMin = delayMin,
         delayMax = delayMax,
+        delayText = delayText,
         maxRevives = maxRevives
     }
     global.commands[commandDetails.id] = commandDetails
 
     -- If this command is the next expiring then update the check tick flag.
-    if commandDetails.removalTick == 0 or commandDetails.removalTick < global.nextCommandExpireTick then
+    if global.nextCommandExpireTick == 0 or commandDetails.removalTick < global.nextCommandExpireTick then
         global.nextCommandExpireTick = commandDetails.removalTick
     end
 
@@ -1011,14 +1083,15 @@ BiterRevive.OnCommand_DumptStateData = function(command)
     dumptext = dumptext .. "reviveChancePerEvoPercentFormula, " .. tostring(global.modSettings_reviveChancePerEvoPercentFormula) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMin, " .. tostring(global.modSettings_reviveDelayMin) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMax, " .. tostring(global.modSettings_reviveDelayMax) .. "\r\n"
+    dumptext = dumptext .. "reviveDelayText, " .. tostring(global.modSettings_reviveDelayText) .. "\r\n"
     dumptext = dumptext .. "maxRevivesPerUnit, " .. tostring(global.modSettings_maxRevivesPerUnit) .. "\r\n"
 
     -- Commands
     dumptext = dumptext .. "\r\n\r\n"
     dumptext = dumptext .. "Commands" .. "\r\n"
-    dumptext = dumptext .. "id, priority, duration, removalTick, evoMin, evoMax, chanceBase, chancePerEvo, chanceFormula, delayMin, delayMax, maxRevives" .. "\r\n"
+    dumptext = dumptext .. "id, priority, duration, removalTick, evoMin, evoMax, chanceBase, chancePerEvo, chanceFormula, delayMin, delayMax, delayText, maxRevives" .. "\r\n"
     for _, commandDetails in pairs(global.commands) do
-        dumptext = dumptext .. tostring(commandDetails.id) .. ", " .. tostring(commandDetails.priority) .. ", " .. tostring(commandDetails.duration) .. ", " .. tostring(commandDetails.removalTick) .. ", " .. tostring(commandDetails.evoMin) .. ", " .. tostring(commandDetails.evoMax) .. ", " .. tostring(commandDetails.chanceBase) .. ", " .. tostring(commandDetails.chancePerEvo) .. ", " .. tostring(commandDetails.chanceFormula) .. ", " .. tostring(commandDetails.delayMin) .. ", " .. tostring(commandDetails.delayMax) .. ", " .. tostring(commandDetails.maxRevives) .. "\r\n"
+        dumptext = dumptext .. tostring(commandDetails.id) .. ", " .. tostring(commandDetails.priority) .. ", " .. tostring(commandDetails.duration) .. ", " .. tostring(commandDetails.removalTick) .. ", " .. tostring(commandDetails.evoMin) .. ", " .. tostring(commandDetails.evoMax) .. ", " .. tostring(commandDetails.chanceBase) .. ", " .. tostring(commandDetails.chancePerEvo) .. ", " .. tostring(commandDetails.chanceFormula) .. ", " .. tostring(commandDetails.delayMin) .. ", " .. tostring(commandDetails.delayMax) .. ", " .. tostring(commandDetails.delayText) .. ", " .. tostring(commandDetails.maxRevives) .. "\r\n"
     end
 
     -- Runtime settings
@@ -1031,6 +1104,7 @@ BiterRevive.OnCommand_DumptStateData = function(command)
     dumptext = dumptext .. "reviveChancePerEvoPercentFormula, " .. tostring(global.reviveChancePerEvoPercentFormula) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMin, " .. tostring(global.reviveDelayMin) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMax, " .. tostring(global.reviveDelayMax) .. "\r\n"
+    dumptext = dumptext .. "reviveDelayText, " .. tostring(Utils.TableValueToCommaString(global.reviveDelayTexts)) .. "\r\n" --TODO: need to repalce the comma's with something CSV friendly.
     dumptext = dumptext .. "maxRevivesPerUnit, " .. tostring(global.maxRevivesPerUnit) .. "\r\n"
 
     -- Write out the file to disk and message the player.
