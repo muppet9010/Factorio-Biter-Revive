@@ -1,2 +1,0 @@
-- Add a gif to the mod portal page at the top.
-- Spell check readme and locale.

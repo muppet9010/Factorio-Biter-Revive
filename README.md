@@ -1,15 +1,17 @@
 # Factorio-Biter-Revive
 
-Any biter that dies will have a chance to revive back to life based on mod settings and temporary settings from commands (RCON). The mod is focused on facilitating streamer integrations and so uses a layered settings approach, but can be used standalone using mod settings alone.
+Any biter that dies will have a chance to revive back to life based on mod settings and temporary settings from commands (RCON).
 
-The chance of the revival is based on a configurable scale driven by the enemy force's evolution. With various configurable options controlling revive delay
+![Biter Revive Example](https://giant.gfycat.com/ChillyKnobbyAffenpinscher.mp4)
+
+The mod is focused on facilitating streamer integrations and so uses a layered settings approach, but can be used standalone using mod settings alone.
 
 
 
 Details
 =======
 
-- Any "unit" entity is available for revival with various mod settings allowing fine tuning of whats excluded by entity and force name. By default the mod settings are configured only for the compilatron unit to be excluded.
+- Any "unit" entity is available for revival with various mod settings allowing fine tuning of what's excluded by entity and force name. By default the mod settings are configured only for the compilatron unit to be excluded.
 - Revive chance is a scale based on configurable settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
 - Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dieing.
 - Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the biter dies, but instead a fraction of a second later.
@@ -35,6 +37,7 @@ Command (RCON)
 
 The command concept is designed as a highly flexible way of applying setting values and modifiers. Commands apply for a limited duration and the mod supports multiple being active at one time and "stacking" with each other. When a biter dies the mod evaluates all active command settings and the mod settings in a hierarchical manner to establish the correct current runtime settings.
 
+
 Logic
 -----
 
@@ -52,9 +55,12 @@ When the mod is evaluating command and mod settings to identify the current runt
 4. All commands with the Add priority will be added to the base value. If these are negative values then they will be deducted. This allows multiple Add commands to apply their cumulative effect.
 5. The final value for evolution and revive chance settings will be clamped between 0% and 100%. With duration min/max settings being prevented going below 0 seconds.
 
-#### Exception
+#### Exceptions
 
-2 settings are an exception to the above evalutation logic: chanceFormula and delayText. For these settings only the highest priority order active command will set the current value. If multiple commands are equally the highest priroity one will be selected at random. This isn't deemed an issue as the concept of adding text strings together or finding the largest one doesn't make sense. Priority order is: enforced command, base command, mod setting, add command.
+2 settings are exceptions to the above evaluation logic: `chanceFormula` and `delayText`
+
+For these settings only the highest priority order active command will set the current value. If multiple commands are equally the highest priority one will be selected at random. This isn't deemed an issue as the concept of adding text strings together or finding the largest one doesn't make sense. Priority order is: enforced command, base command, mod setting, add command.
+
 
 Syntax
 ------
@@ -67,18 +73,18 @@ Commands are provided with a single JSON argument with the below structure:
 - settings = a table (dictionary) of setting name (string) and value (double). The setting names supported are:
   - evoMin = the evolution minimum required for reviving to start % as a number (double), i.e. 50 = 50% - equivalent to the mod setting "Evolution % minimum for reviving".
   - evoMax = the evolution maximum when the revive chance doesn't increase any more % as a number (double), i.e. 80 = 80% - equivalent to the mod setting "Evolution % for maximum reviving chance".
-  - chanceBase = the revive chance % when at minimum evolution as a number (double), i.e. 5 = 5% - Equivalent of mod setting "Chance of revival starting %".
+  - chanceBase = the revival chance % when at minimum evolution as a number (double), i.e. 5 = 5% - Equivalent of mod setting "Chance of revival starting %".
   - chancePerEvo = the revive chance % increase per evolution % up to the max evolution limit as a number (double), i.e. 2 = 2% - equivalent to the mod setting "Chance of revive % per evolution %".
-  - chanceFormula = the revival chance formula as a text string - Equivalent of mod setting "Chance of revive formula". Note: this setting doesn't follow the standard command evalatuation logic as listed in the exception note in the logic section.
+  - chanceFormula = the revival chance formula as a text string - Equivalent of mod setting "Chance of revive formula". Note: this setting is an exception to the standard command evaluation logic.
   - delayMin = the revive delay minimum in seconds as a number (integer), i.e. 0 = 0 seconds - equivalent to the mod setting "Revive delay minimum seconds".
   - delayMax = the revive delay maximum in seconds as a number (integer), i.e. 5 = 5 seconds - equivalent to the mod setting "Revive delay maximum seconds".
-  - delayText = the text to be shown above biters that are waiting their delay to revive, as a comma seperated string list (string) - equivalent to the mod setting "Delayed revive text". Note: this setting doesn't follow the standard command evalatuation logic as listed in the exception note in the logic section.
-  - maxRevives = the maxiumum number of times a single unit can be revived (integer), with 0 being unlimited (nearly) - equivalent to the mod setting "Maximum revives per unit".
+  - delayText = the text to be shown above biters that are waiting their delay to revive, as a comma separated string list (string) - equivalent to the mod setting "Delayed revive text". Note: this setting is an exception to the standard command evaluation logic.
+  - maxRevives = the maximum number of times a single unit can be revived (integer), with 0 being unlimited (nearly) - equivalent to the mod setting "Maximum revives per unit".
 - priority = the priority for this command as a text string. Supported values "enforced", "base", "add".
 
 #### Example Commands
 
-These are provided as JSON strings and can be copy pasted straight in to Factorio console. If sendign via RCON ensure you consider approperiate escaping of the quotes for your RCON integration tool.
+These are provided as JSON strings and can be copy pasted straight into the Factorio console. If sending via RCON ensure you consider appropriate escaping of the quotes for your RCON integration tool.
 
 1. Make biters revive in all cases for 1 minute and have zombie delay text, assuming there is no revive formula setting present in the mods usage:
    > `/biter_revive_add_modifier {"duration":60, "settings":{ "evoMin":0, "evoMax":100, "chanceBase":100, "chancePerEvo":0, "delayText":"uuggghh, raaaugh, blaaagh"}, "priority":"enforced"}`
