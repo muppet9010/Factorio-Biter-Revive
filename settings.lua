@@ -1,9 +1,10 @@
+-- Settings that have RCON commands.
 data:extend(
     {
         {
             name = "biter_revive-evolution_percent_minimum",
             type = "double-setting",
-            default_value = 70,
+            default_value = 50,
             minimum_value = 0,
             maximum_value = 100,
             setting_type = "runtime-global",
@@ -47,7 +48,7 @@ data:extend(
         {
             name = "biter_revive-delay_seconds_minimum",
             type = "int-setting",
-            default_value = 0,
+            default_value = 2,
             minimum_value = 0,
             setting_type = "runtime-global",
             order = "1006"
@@ -55,18 +56,40 @@ data:extend(
         {
             name = "biter_revive-delay_seconds_maximum",
             type = "int-setting",
-            default_value = 10,
+            default_value = 5,
             minimum_value = 0,
             setting_type = "runtime-global",
             order = "1007"
         },
+        {
+            name = "biter_revive-delay_text",
+            type = "string-setting",
+            allow_blank = true,
+            default_value = "zzz, snore",
+            setting_type = "runtime-global",
+            order = "1008"
+        },
+        {
+            name = "biter_revive-maximum_revives_per_unit",
+            type = "int-setting",
+            default_value = 0,
+            minimum_value = 0,
+            setting_type = "runtime-global",
+            order = "1009"
+        }
+    }
+)
+
+-- Settings without RCON commands.
+data:extend(
+    {
         {
             name = "biter_revive-revives_per_second",
             type = "int-setting",
             default_value = 50,
             minimum_value = 0,
             setting_type = "runtime-global",
-            order = "1008"
+            order = "2000"
         },
         {
             name = "biter_revive-blacklisted_prototype_names",

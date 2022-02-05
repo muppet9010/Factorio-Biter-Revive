@@ -1,4 +1,19 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.1
+Date: 2022-02-05
+  Features:
+    - Add mod setting and command option to limit how many times the same biter can revive.
+    - Remove the corpses of a unit when it revives.
+    - Add mod setting and command option for text over biters awaiting reviving.
+  Changes:
+    - Removed the requirement of units to have the "breaths-air" flag as irrelevant.
+    - Chance formula validation for command and mod settings enhanced to test 0 and 100 evolution values and to provide more detailed failure feedback.
+    - Chance formula validated on command when missing before.
+    - Any mod setting errors present on map creation will now be printed to the screen a few moments after the game started. Before Factorio "lost" them.
+    - Biters will spawn in the nearest valid location to where they died. But it will search a large area to prevent placing buildings over them to prevent them appearing. Biters don't block other biters so there should be no risk of them teleporting across walls unless the player tries to grief the process excessively.
+  Bugfixes:
+  Info:
+---------------------------------------------------------------------------------------------------
 Version: 1.1.0
 Date: 2022-02-03
   Features:
