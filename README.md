@@ -15,6 +15,7 @@ Details
 - Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the biter dies, but instead a fraction of a second later.
 - Biters waiting their delay time to revive can have text shown above them until they revive. This is highly configurable and will only appear if the delay is more than 2 seconds. --TODO
 - There is a mod setting to limit how many times the same unit can be revived. It defaults to unlimited. Its useful for cases of very high revive rate when you don't want the risk of near infinite revivals due to random chances.
+- If a biter revive location is blocked by buildings after the biter has died then the biter will revive in the nearest available location. This is to prevent griefing by building large walls or buildings over delayed revival biters.
 
 
 

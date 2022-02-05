@@ -1,4 +1,2 @@
-- You can block revive by placing buildings over corpses. At present the entity respawns due to just blindly creating the biter.
-
 - Add a gif to the mod portal page at the top.
 - Spell check readme and locale.

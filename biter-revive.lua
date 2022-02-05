@@ -387,32 +387,21 @@ BiterRevive.ProcessReviveQueue = function(event)
         if reviveQueueTickObjects ~= nil then
             for reviveIndex, reviveDetails in pairs(reviveQueueTickObjects) do
                 -- We handle surface's being deleted and forces merged via events so no need to check them per execution here.
+                local revivedBiter
 
-                -- Just try and revive the biter as almost always it will just work.
-                local revivedBiter =
-                    reviveDetails.surface.create_entity {
-                    name = reviveDetails.prototypeName,
-                    position = reviveDetails.position,
-                    force = reviveDetails.force,
-                    orientation = reviveDetails.orientation,
-                    create_build_effect_smoke = false,
-                    raise_built = true
-                }
-                -- If the revive failed then check for another position and try again.
-                if revivedBiter == nil then
-                    -- The search for a valid position has to be very small so that biters can revive over walls.
-                    spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 0.5, 0.1)
-                    -- If no spawning point is found just forget about this revive as very unlikely to happen.
-                    if spawnPosition ~= nil then
+                -- Biters don't block other biters placement locations. So only if the player builds over a reviving biter or a player blocks the placement by character or vehicle will the reivivng biter look further out to find somewhere to revive. Can't just revive the biter in position blindly as it will be created on top of the blocking entity.
+                spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 20, 0.1)
+                -- If no spawning point is found just forget about this revive as very unlikely to happen.
+                if spawnPosition ~= nil then
+                    revivedBiter =
                         reviveDetails.surface.create_entity {
-                            name = reviveDetails.prototypeName,
-                            position = spawnPosition,
-                            force = reviveDetails.force,
-                            orientation = reviveDetails.orientation,
-                            create_build_effect_smoke = false,
-                            raise_built = true
-                        }
-                    end
+                        name = reviveDetails.prototypeName,
+                        position = spawnPosition,
+                        force = reviveDetails.force,
+                        orientation = reviveDetails.orientation,
+                        create_build_effect_smoke = false,
+                        raise_built = true
+                    }
                 end
 
                 -- If the unit was revived do some further tasks.
