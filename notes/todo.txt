@@ -1,4 +1,4 @@
-- Check surface and force removal doesn;t need to cater for anything else now.
+- You can block revive by placing buildings over corpses. At present the entity respawns due to just blindly creating the biter.
 
-- Add a gif to the mod portal page at the top
+- Add a gif to the mod portal page at the top.
 - Spell check readme and locale.

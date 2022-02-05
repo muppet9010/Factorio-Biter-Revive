@@ -489,13 +489,16 @@ BiterRevive.OnForcesMerged = function(event)
     global.forcesReviveChance[event.source_index] = nil
 end
 
---- Called when a surface is removed or cleared and we need to remove any scheduled revives on that surface.
+--- Called when a surface is removed or cleared and we need to remove any scheduled revives on that surface and other cached data.
 ---@param event on_surface_cleared|on_surface_deleted
 BiterRevive.OnSurfaceRemoved = function(event)
-    for _, tickRevives in pairs(global.reviveQueue) do
-        for reviveIndex, reviveDetails in pairs(tickRevives) do
+    -- Just empty the reviveQueue per tick grouping object and don't bother to remove it. As removing will be a pain with a sparse array and the processing will handle empty tick groups by default.
+    for _, ticksRevives in pairs(global.reviveQueue) do
+        for reviveIndex, reviveDetails in pairs(ticksRevives) do
             if not reviveDetails.surface.valid or reviveDetails.surface.index == event.surface_index then
-                tickRevives[reviveIndex] = nil
+                ticksRevives[reviveIndex] = nil
+                global.reviveDetailsByUnitNumber[reviveDetails.unitNumber] = nil
+                global.unitReviveCount[reviveDetails.unitNumber] = nil
             end
         end
     end
@@ -1083,7 +1086,7 @@ BiterRevive.OnCommand_DumptStateData = function(command)
     dumptext = dumptext .. "reviveChancePerEvoPercentFormula, " .. tostring(global.modSettings_reviveChancePerEvoPercentFormula) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMin, " .. tostring(global.modSettings_reviveDelayMin) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMax, " .. tostring(global.modSettings_reviveDelayMax) .. "\r\n"
-    dumptext = dumptext .. "reviveDelayText, " .. tostring(global.modSettings_reviveDelayText) .. "\r\n"
+    dumptext = dumptext .. "reviveDelayText, " .. tostring(string.gsub(global.modSettings_reviveDelayText, ",", ";")) .. "\r\n"
     dumptext = dumptext .. "maxRevivesPerUnit, " .. tostring(global.modSettings_maxRevivesPerUnit) .. "\r\n"
 
     -- Commands
@@ -1091,7 +1094,7 @@ BiterRevive.OnCommand_DumptStateData = function(command)
     dumptext = dumptext .. "Commands" .. "\r\n"
     dumptext = dumptext .. "id, priority, duration, removalTick, evoMin, evoMax, chanceBase, chancePerEvo, chanceFormula, delayMin, delayMax, delayText, maxRevives" .. "\r\n"
     for _, commandDetails in pairs(global.commands) do
-        dumptext = dumptext .. tostring(commandDetails.id) .. ", " .. tostring(commandDetails.priority) .. ", " .. tostring(commandDetails.duration) .. ", " .. tostring(commandDetails.removalTick) .. ", " .. tostring(commandDetails.evoMin) .. ", " .. tostring(commandDetails.evoMax) .. ", " .. tostring(commandDetails.chanceBase) .. ", " .. tostring(commandDetails.chancePerEvo) .. ", " .. tostring(commandDetails.chanceFormula) .. ", " .. tostring(commandDetails.delayMin) .. ", " .. tostring(commandDetails.delayMax) .. ", " .. tostring(commandDetails.delayText) .. ", " .. tostring(commandDetails.maxRevives) .. "\r\n"
+        dumptext = dumptext .. tostring(commandDetails.id) .. ", " .. tostring(commandDetails.priority) .. ", " .. tostring(commandDetails.duration) .. ", " .. tostring(commandDetails.removalTick) .. ", " .. tostring(commandDetails.evoMin) .. ", " .. tostring(commandDetails.evoMax) .. ", " .. tostring(commandDetails.chanceBase) .. ", " .. tostring(commandDetails.chancePerEvo) .. ", " .. tostring(commandDetails.chanceFormula) .. ", " .. tostring(commandDetails.delayMin) .. ", " .. tostring(commandDetails.delayMax) .. ", " .. tostring(string.gsub(commandDetails.delayText, ",", ";")) .. ", " .. tostring(commandDetails.maxRevives) .. "\r\n"
     end
 
     -- Runtime settings
@@ -1104,7 +1107,7 @@ BiterRevive.OnCommand_DumptStateData = function(command)
     dumptext = dumptext .. "reviveChancePerEvoPercentFormula, " .. tostring(global.reviveChancePerEvoPercentFormula) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMin, " .. tostring(global.reviveDelayMin) .. "\r\n"
     dumptext = dumptext .. "reviveDelayMax, " .. tostring(global.reviveDelayMax) .. "\r\n"
-    dumptext = dumptext .. "reviveDelayText, " .. tostring(Utils.TableValueToCommaString(global.reviveDelayTexts)) .. "\r\n" --TODO: need to repalce the comma's with something CSV friendly.
+    dumptext = dumptext .. "reviveDelayText, " .. tostring(string.gsub(Utils.TableValueToCommaString(global.reviveDelayTexts), ",", ";")) .. "\r\n"
     dumptext = dumptext .. "maxRevivesPerUnit, " .. tostring(global.maxRevivesPerUnit) .. "\r\n"
 
     -- Write out the file to disk and message the player.
