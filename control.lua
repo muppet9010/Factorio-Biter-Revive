@@ -9,7 +9,7 @@ local function OnLoad()
     BiterRevive.OnLoad()
 end
 
----@param event on_runtime_mod_setting_changed|null
+---@param event on_runtime_mod_setting_changed|nil
 local function OnSettingChanged(event)
     BiterRevive.OnSettingChanged(event)
 end
