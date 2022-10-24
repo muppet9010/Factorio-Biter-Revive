@@ -1,1 +1,3 @@
 Revived biters should be set to target everything.
+Add remote interfaces to commands.
+re-do readme so command/remote interface description is nicer.
