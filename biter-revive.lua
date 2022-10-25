@@ -9,19 +9,19 @@ local math_min, math_max, math_floor, math_random = math.min, math.max, math.flo
 local DelayGroupingTicks = 15 -- How many ticks between each group of biters to revive.
 local ForceEvoCacheTicks = 600 -- How long to cache a forces evo for before it is refreshed on next dead unit. Currently 10 seconds as a balance between proper caching and reacting to a sudden evolution jump from a modded/scripted event.
 
-local CommandAttributes = {
+local CommandAttributeTypes = {
     duration = "duration",
     settings = "settings",
     priority = "priority"
 }
----@enum CommandPriority
-local CommandPriority = {
+---@enum CommandPriorityTypes
+local CommandPriorityTypes = {
     enforced = "enforced",
     base = "base",
     add = "add"
 }
----@enum CommandPriorityOrderedIndex @ Lower is better.
-local CommandPriorityOrderedIndex = {
+---@enum CommandPriorityOrderedIndexTypes @ Lower is better.
+local CommandPriorityOrderedIndexTypes = {
     enforced = 1,
     base = 2,
     modSetting = 3,
@@ -61,7 +61,7 @@ local CommandSettingNames = {
 ---@field id uint
 ---@field duration uint # Ticks
 ---@field removalTick uint
----@field priority CommandPriority
+---@field priority CommandPriorityTypes
 ---@field evoMin double @ Range of 0 to 1.
 ---@field evoMax double @ Range of 0 to 1.
 ---@field chanceBase double @ Range of 0 to 1.
@@ -294,7 +294,7 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
             ) --[[@as double]]
 
             if not success then
-                LoggingUtils.LogPrintError("Revive chance formula failed when being applied with 'evo' value of: " .. tostring(forceEvoAboveMin))
+                LoggingUtils.LogPrintError("Revive chance formula failed when being applied with `evo` value of: " .. tostring(forceEvoAboveMin))
                 chanceForEvo = 0
             end
         end
@@ -302,7 +302,7 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
         -- Check the value isn't a NaN.
         if chanceForEvo ~= chanceForEvo then
             -- reviveChance is NaN so set it to 0.
-            LoggingUtils.LogPrintError("Revive chance result ended up as invalid number, error in mod setting value. The 'evo' above minimum was: " .. tostring(forceEvoAboveMin))
+            LoggingUtils.LogPrintError("Revive chance result ended up as invalid number, error in mod setting value. The `evo` above minimum was: " .. tostring(forceEvoAboveMin))
             chanceForEvo = 0
         end
 
@@ -562,11 +562,11 @@ end
 BiterRevive.CalculateCurrentChanceFormula = function()
     -- Is special in that we record the first highest priority formula we find and use that.
     local currentFormula ---@type string
-    local currentFormulaPriorityOrderedIndex = CommandPriorityOrderedIndex.processingDefaultLow
+    local currentFormulaPriorityOrderedIndex = CommandPriorityOrderedIndexTypes.processingDefaultLow
     for _, command in pairs(global.commands) do
         -- Will be a non existant setting in the command and not an empty string like the mod setting.
         if command[CommandSettingNames.chanceFormula] ~= nil then
-            local commandPriorityOrderedIndex = CommandPriorityOrderedIndex[command.priority] --[[@as CommandPriorityOrderedIndex]]
+            local commandPriorityOrderedIndex = CommandPriorityOrderedIndexTypes[command.priority] --[[@as CommandPriorityOrderedIndexTypes]]
             if commandPriorityOrderedIndex < currentFormulaPriorityOrderedIndex then
                 currentFormula = command.chanceFormula
                 currentFormulaPriorityOrderedIndex = commandPriorityOrderedIndex
@@ -579,7 +579,7 @@ BiterRevive.CalculateCurrentChanceFormula = function()
     end
 
     -- Check if the mod setting should set the formula over an "add" command. The mod setting is stored as an empty string and not nil as its a global.
-    if currentFormulaPriorityOrderedIndex > CommandPriorityOrderedIndex.modSetting and global.modSettings_reviveChancePerEvoPercentFormula ~= "" then
+    if currentFormulaPriorityOrderedIndex > CommandPriorityOrderedIndexTypes.modSetting and global.modSettings_reviveChancePerEvoPercentFormula ~= "" then
         currentFormula = global.modSettings_reviveChancePerEvoPercentFormula
     end
 
@@ -594,11 +594,11 @@ end
 BiterRevive.CalculateCurrentDelayText = function()
     -- Is special in that we record the first highest priority text string we find and use that.
     local currentDelayText ---@type string
-    local currentDelayTextPriorityOrderedIndex = 10 ---@type CommandPriorityOrderedIndex
+    local currentDelayTextPriorityOrderedIndex = 10 ---@type CommandPriorityOrderedIndexTypes
     for _, command in pairs(global.commands) do
         -- Will be a non existant setting in the command and not an empty string like the mod setting.
         if command[CommandSettingNames.delayText] ~= nil then
-            local commandPriorityOrderedIndex = CommandPriorityOrderedIndex[command.priority]
+            local commandPriorityOrderedIndex = CommandPriorityOrderedIndexTypes[command.priority]
             if commandPriorityOrderedIndex < currentDelayTextPriorityOrderedIndex then
                 currentDelayText = command.delayText
                 currentDelayTextPriorityOrderedIndex = commandPriorityOrderedIndex
@@ -611,7 +611,7 @@ BiterRevive.CalculateCurrentDelayText = function()
     end
 
     -- Check if the mod setting should set the delay text over an "add" command. The mod setting is stored as an empty string and not nil as its a global.
-    if currentDelayTextPriorityOrderedIndex > CommandPriorityOrderedIndex.modSetting and global.modSettings_reviveDelayText ~= "" then
+    if currentDelayTextPriorityOrderedIndex > CommandPriorityOrderedIndexTypes.modSetting and global.modSettings_reviveDelayText ~= "" then
         currentDelayText = global.modSettings_reviveDelayText
     end
 
@@ -628,7 +628,7 @@ end
 
 --- Generic processing of settings.
 ---@param settingName CommandSettingNames
----@param minOrMax "'min'"|"'max'" @ If this uses the min or max value for multiple enforce or base priority commands.
+---@param minOrMax "min"|"max" @ If this uses the min or max value for multiple enforce or base priority commands.
 ---@param modSettingCacheName string @ The global cache value of the mod setting for use if no enforced or base commands.
 ---@param zeroIsInfinitelyLarge boolean @ If true then a zero value is the largest value at infinitely large.
 ---@return number currentValue # Exact result type will depend upon fed in values.
@@ -825,11 +825,11 @@ BiterRevive.OnSettingChanged = function(event)
             for name in pairs(global.blacklistedPrototypeNames) do
                 local prototype = game.entity_prototypes[name]
                 if prototype == nil then
-                    settingErrorMessage = "Biter Revive - unrecognised prototype name '" .. name .. "' in blacklisted prototype names. Is number " .. tostring(count) .. " in the list."
+                    settingErrorMessage = "Biter Revive - unrecognised prototype name `" .. name .. "` in blacklisted prototype names. Is number " .. tostring(count) .. " in the list."
                     LoggingUtils.LogPrintError(settingErrorMessage)
                     table.insert(settingErrorMessages, settingErrorMessage)
                 elseif prototype.type ~= "unit" then
-                    settingErrorMessage = "Biter Revive - prototype name '" .. name .. "' in blacklisted prototype names isn't of type 'unit' and so could never be revived anyways."
+                    settingErrorMessage = "Biter Revive - prototype name `" .. name .. "` in blacklisted prototype names isn't of type `unit` and so could never be revived anyways."
                     LoggingUtils.LogPrintError(settingErrorMessage)
                     table.insert(settingErrorMessages, settingErrorMessage)
                 end
@@ -890,7 +890,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
 
     -- Check the top level JSON object table.
     local data = args[1]
-    if not CommandUtils.CheckTableArgument(data, true, command.name, "Json object", CommandAttributes, command.parameter) then
+    if not CommandUtils.CheckTableArgument(data, true, command.name, "Json object", CommandAttributeTypes, command.parameter) then
         return
     end
 
@@ -902,8 +902,8 @@ BiterRevive.OnCommand_AddModifier = function(command)
     end
     local durationTicks = durationSeconds * 60 --[[@as uint]]
 
-    local priority = data.priority ---@type CommandPriority
-    if not CommandUtils.CheckStringArgument(priority, true, command.name, "priority", CommandPriority, command.parameter) then
+    local priority = data.priority ---@type CommandPriorityTypes
+    if not CommandUtils.CheckStringArgument(priority, true, command.name, "priority", CommandPriorityTypes, command.parameter) then
         return
     end
 
