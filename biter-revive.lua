@@ -104,9 +104,9 @@ BiterRevive.CreateGlobals = function()
     global.modSettings_maxRevivesPerUnit = global.modSettings_maxRevivesPerUnit or 0 ---@type uint
 
     global.blacklistedPrototypeNames = global.blacklistedPrototypeNames or {} ---@type table<string, true> @ The key is blacklisted prototype name, with a value of true.
-    global.raw_BlacklistedPrototypeNames = global.raw_BlacklistedPrototypeNames or "" ---@type string @ The raw setting value.
+    global.raw_BlacklistedPrototypeNames = global.raw_BlacklistedPrototypeNames or "" ---@type string @ The last recorded raw setting value.
     global.blacklistedForceIds = global.blacklistedForceIds or {} ---@type table<uint, true> @ The force Id as key, with the force name we match against the setting on as the value.
-    global.raw_BlacklistedForceNames = global.raw_BlacklistedForceNames or "" ---@type string @ The raw setting value.
+    global.raw_BlacklistedForceNames = global.raw_BlacklistedForceNames or "" ---@type string @ The last recorded raw setting value.
 
     global.revivesPerCycle = global.revivesPerCycle or 0 --- How many revives can be done per cycle. Every cycle in each second apart from the one exactly at the start of the second.
     global.revivesPerCycleOnStartOfSecond = global.revivesPerCycleOnStartOfSecond or 0 --- How many revives can be done on the cycle at the start of the second. This makes up for any odd dividing issues with the player setting being revives per second.
@@ -812,14 +812,14 @@ BiterRevive.OnSettingChanged = function(event)
     if event == nil or event.setting == "biter_revive-blacklisted_prototype_names" then
         local settingValue = settings.global["biter_revive-blacklisted_prototype_names"].value --[[@as string]]
 
-        -- Check if was populated before as if not changed from before we don't want to confirm no change.
+        -- Check if the setting has changed before we bother to process it.
         local changed = settingValue ~= global.raw_BlacklistedPrototypeNames
         global.raw_BlacklistedPrototypeNames = settingValue
 
-        global.blacklistedPrototypeNames = StringUtils.SplitStringOnCharactersToDictionary(settingValue, ",")
-
-        -- Only check and notify if the setting value was actually changed from before.
+        -- Only check and update if the setting value was actually changed from before.
         if changed then
+            global.blacklistedPrototypeNames = StringUtils.SplitStringOnCharactersToDictionary(settingValue, ",")
+
             -- Check each prototype name is valid and tell the player about any that aren't. Don't block the update though as it does no harm.
             local count = 1
             for name in pairs(global.blacklistedPrototypeNames) do
@@ -835,36 +835,33 @@ BiterRevive.OnSettingChanged = function(event)
                 end
                 count = count + 1
             end
-
-            -- Confirm back to the player the prototypes identified from the list.
-            game.print("Biter Revive - Blacklisted prototype names changed to: " .. TableUtils.TableKeyToNumberedListString(global.blacklistedPrototypeNames))
         end
     end
     if event == nil or event.setting == "biter_revive-blacklisted_force_names" then
         local settingValue = settings.global["biter_revive-blacklisted_force_names"].value --[[@as string]]
 
-        -- Check if was populated before as if not changed from before we don't want to confirm no change.
+        -- Check if the setting has changed before we bother to process it.
         local changed = settingValue ~= global.raw_BlacklistedForceNames
         global.raw_BlacklistedForceNames = settingValue
 
-        local forceNames = StringUtils.SplitStringOnCharactersToDictionary(settingValue, ",")
-        -- Blank the global before adding the new ones every time.
-        global.blacklistedForceIds = {}
-        -- Only add valid force Id's to the global.
-        for forceName in pairs(forceNames) do
-            local force = game.forces[forceName] --[[@as LuaForce]]
-            if force ~= nil then
-                global.blacklistedForceIds[force.index] = true
-            else
-                settingErrorMessage = "Biter Revive - Invalid force name provided: " .. forceName
-                LoggingUtils.LogPrintError(settingErrorMessage)
-                table.insert(settingErrorMessages, settingErrorMessage)
-            end
-        end
-
-        -- Only notify about the change if the setting was changed
+        -- Only check and update if the setting value was actually changed from before.
         if changed then
-            game.print("Biter Revive - Blacklisted force Ids changed to: " .. TableUtils.TableKeyToNumberedListString(forceNames))
+            local forceNames = StringUtils.SplitStringOnCharactersToDictionary(settingValue, ",")
+
+            -- Blank the global before adding the new ones every time.
+            global.blacklistedForceIds = {}
+
+            -- Only add valid force Id's to the global.
+            for forceName in pairs(forceNames) do
+                local force = game.forces[forceName] --[[@as LuaForce]]
+                if force ~= nil then
+                    global.blacklistedForceIds[force.index] = true
+                else
+                    settingErrorMessage = "Biter Revive - Invalid force name provided: " .. forceName
+                    LoggingUtils.LogPrintError(settingErrorMessage)
+                    table.insert(settingErrorMessages, settingErrorMessage)
+                end
+            end
         end
     end
 
