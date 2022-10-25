@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.2
+Date: 2022-10-25
+  Features:
+    - Added Remote Interface in addition to existing Factorio Command to add a settings modifier.
+  Changes:
+    - Biters will revive back to their pre-death command if its still valid. Should help stop them idling around as much.
+  Bugfixes:
+  Info:
+---------------------------------------------------------------------------------------------------
 Version: 1.1.1
 Date: 2022-02-05
   Features:
