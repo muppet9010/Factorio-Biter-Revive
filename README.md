@@ -13,7 +13,7 @@ Details
 
 - Any "unit" entity is available for revival with various mod settings allowing fine tuning of what's excluded by entity and force name. By default the mod settings are configured only for the compilatron unit to be excluded.
 - Revive chance is a scale based on configurable settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
-- Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dieing.
+- Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dying.
 - Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the biter dies, but instead a fraction of a second later.
 - Biters waiting their delay time to revive can have configurable text shown above them until they revive, i.e. snore, BRB, its just a flesh wound, etc.
 - There is a mod setting to limit how many times the same unit can be revived. It defaults to unlimited. Its useful for cases of very high revive rate when you don't want the risk of near infinite revivals due to random chances.
@@ -24,7 +24,7 @@ Details
 Revive Chance Formula
 =====================
 
-This is a special setting for when you want nonlinear revive chance growth in relation to evolution. When the default value of the setting is blank/empty then the simpler "Chance of revive % per evolution %" setting value will be used by the mod. When the formula setting is populated it will take priority over the simpler setting.
+This is a special setting for when you want non linear revive chance growth in relation to evolution. When the default value of the setting is blank/empty then the simpler "Chance of revive % per evolution %" setting value will be used by the mod. When the formula setting is populated it will take priority over the simpler setting.
 
 The formula must be valid Lua written as suitable for use after the keyword "return" and will be run within the mod. The biter's force evolution above the minimum runtime setting will be passed in as a Lua variable "evo" as a numeric value of the evolution percentage. So if the minimum is 70 (%) and the biters force evo is 72 (%) the "evo" variable will have a value of 2.
 

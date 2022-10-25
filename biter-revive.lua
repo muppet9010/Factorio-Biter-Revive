@@ -1,7 +1,9 @@
 local BiterRevive = {}
-local Utils = require("utility/utils")
-local Colors = require("utility/colors")
-local Commands = require("utility/commands")
+local StringUtils = require("utility.helper-utils.string-utils")
+local TableUtils = require("utility.helper-utils.table-utils")
+local Colors = require("utility.lists.colors")
+local CommandUtils = require("utility.helper-utils.commands-utils")
+local LoggingUtils = require("utility.helper-utils.logging-utils")
 local math_min, math_max, math_floor, math_random = math.min, math.max, math.floor, math.random
 
 local DelayGroupingTicks = 15 -- How many ticks between each group of biters to revive.
@@ -101,9 +103,9 @@ BiterRevive.CreateGlobals = function()
     global.modSettings_reviveDelayText = global.modSettings_reviveDelayText or "" ---@type string @ A blank string is none or a comma separated string.
     global.modSettings_maxRevivesPerUnit = global.modSettings_maxRevivesPerUnit or 0 ---@type uint
 
-    global.blacklistedPrototypeNames = global.blacklistedPrototypeNames or {} ---@type table<string, True> @ The key is blacklisted prototype name, with a value of true.
+    global.blacklistedPrototypeNames = global.blacklistedPrototypeNames or {} ---@type table<string, true> @ The key is blacklisted prototype name, with a value of true.
     global.raw_BlacklistedPrototypeNames = global.raw_BlacklistedPrototypeNames or "" ---@type string @ The raw setting value.
-    global.blacklistedForceIds = global.blacklistedForceIds or {} ---@type table<uint, True> @ The force Id as key, with the force name we match against the setting on as the value.
+    global.blacklistedForceIds = global.blacklistedForceIds or {} ---@type table<uint, true> @ The force Id as key, with the force name we match against the setting on as the value.
     global.raw_BlacklistedForceNames = global.raw_BlacklistedForceNames or "" ---@type string @ The raw setting value.
 
     global.revivesPerCycle = global.revivesPerCycle or 0 --- How many revives can be done per cycle. Every cycle in each second apart from the one exactly at the start of the second.
@@ -125,7 +127,7 @@ BiterRevive.OnStartup = function()
 
                 -- Print any errors and then remove them.
                 for _, errorMessage in pairs(global.zeroTickErrors) do
-                    game.print(errorMessage, Colors.lightred)
+                    LoggingUtils.LogPrintError(errorMessage)
                 end
                 global.zeroTickErrors = {}
 
@@ -144,8 +146,8 @@ BiterRevive.OnLoad = function()
     script.on_event(defines.events.on_forces_merged, BiterRevive.OnForcesMerged)
     script.on_event(defines.events.on_surface_deleted, BiterRevive.OnSurfaceRemoved)
     script.on_event(defines.events.on_surface_cleared, BiterRevive.OnSurfaceRemoved)
-    Commands.Register("biter_revive_add_modifier", { "command.biter_revive_add_modifier" }, BiterRevive.OnCommand_AddModifier, true)
-    Commands.Register("biter_revive_dump_state_data", { "command.biter_revive_dump_state_data" }, BiterRevive.OnCommand_DumpStateData, true)
+    CommandUtils.Register("biter_revive_add_modifier", { "command.biter_revive_add_modifier" }, BiterRevive.OnCommand_AddModifier, true)
+    CommandUtils.Register("biter_revive_dump_state_data", { "command.biter_revive_dump_state_data" }, BiterRevive.OnCommand_DumpStateData, true)
 end
 
 --- When a monitored entity type has died review it and if appropriate add it to the revive queue.
@@ -292,7 +294,7 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
             ) --[[@as double]]
 
             if not success then
-                game.print("Revive chance formula failed when being applied with 'evo' value of: " .. forceEvoAboveMin, Colors.lightred)
+                LoggingUtils.LogPrintError("Revive chance formula failed when being applied with 'evo' value of: " .. tostring(forceEvoAboveMin))
                 chanceForEvo = 0
             end
         end
@@ -300,7 +302,7 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
         -- Check the value isn't a NaN.
         if chanceForEvo ~= chanceForEvo then
             -- reviveChance is NaN so set it to 0.
-            game.print("Revive chance result ended up as invalid number, error in mod setting value. The 'evo' above minimum was: " .. forceEvoAboveMin, Colors.lightred)
+            LoggingUtils.LogPrintError("Revive chance result ended up as invalid number, error in mod setting value. The 'evo' above minimum was: " .. tostring(forceEvoAboveMin))
             chanceForEvo = 0
         end
 
@@ -615,7 +617,7 @@ BiterRevive.CalculateCurrentDelayText = function()
 
     -- Reset the texts and populate with the entries in the current comma separated string value.
     if currentDelayText ~= nil then
-        global.reviveDelayTexts = Utils.SplitStringOnCharacters(currentDelayText, ",", false)
+        global.reviveDelayTexts = StringUtils.SplitStringOnCharactersToList(currentDelayText, ",")
     else
         global.reviveDelayTexts = {}
     end
@@ -764,7 +766,7 @@ BiterRevive.OnSettingChanged = function(event)
             else
                 -- Formula is bad.
                 settingErrorMessage = "Biter Revive - Invalid revive chance formula provided in mod settings so it's being ignored. Error: " .. errorMessage
-                game.print(settingErrorMessage, Colors.lightred)
+                LoggingUtils.LogPrintError(settingErrorMessage)
                 table.insert(settingErrorMessages, settingErrorMessage)
                 global.modSettings_reviveChancePerEvoPercentFormula = ""
             end
@@ -814,7 +816,7 @@ BiterRevive.OnSettingChanged = function(event)
         local changed = settingValue ~= global.raw_BlacklistedPrototypeNames
         global.raw_BlacklistedPrototypeNames = settingValue
 
-        global.blacklistedPrototypeNames = Utils.SplitStringOnCharacters(settingValue, ",", true) --[[@as table<string, True>]]
+        global.blacklistedPrototypeNames = StringUtils.SplitStringOnCharactersToDictionary(settingValue, ",")
 
         -- Only check and notify if the setting value was actually changed from before.
         if changed then
@@ -824,18 +826,18 @@ BiterRevive.OnSettingChanged = function(event)
                 local prototype = game.entity_prototypes[name]
                 if prototype == nil then
                     settingErrorMessage = "Biter Revive - unrecognised prototype name '" .. name .. "' in blacklisted prototype names. Is number " .. tostring(count) .. " in the list."
-                    game.print(settingErrorMessage, Colors.lightred)
+                    LoggingUtils.LogPrintError(settingErrorMessage)
                     table.insert(settingErrorMessages, settingErrorMessage)
                 elseif prototype.type ~= "unit" then
                     settingErrorMessage = "Biter Revive - prototype name '" .. name .. "' in blacklisted prototype names isn't of type 'unit' and so could never be revived anyways."
-                    game.print(settingErrorMessage, Colors.lightred)
+                    LoggingUtils.LogPrintError(settingErrorMessage)
                     table.insert(settingErrorMessages, settingErrorMessage)
                 end
                 count = count + 1
             end
 
             -- Confirm back to the player the prototypes identified from the list.
-            game.print("Biter Revive - Blacklisted prototype names changed to: " .. Utils.TableKeyToNumberedListString(global.blacklistedPrototypeNames))
+            game.print("Biter Revive - Blacklisted prototype names changed to: " .. TableUtils.TableKeyToNumberedListString(global.blacklistedPrototypeNames))
         end
     end
     if event == nil or event.setting == "biter_revive-blacklisted_force_names" then
@@ -845,7 +847,7 @@ BiterRevive.OnSettingChanged = function(event)
         local changed = settingValue ~= global.raw_BlacklistedForceNames
         global.raw_BlacklistedForceNames = settingValue
 
-        local forceNames = Utils.SplitStringOnCharacters(settingValue, ",", true)
+        local forceNames = StringUtils.SplitStringOnCharactersToDictionary(settingValue, ",")
         -- Blank the global before adding the new ones every time.
         global.blacklistedForceIds = {}
         -- Only add valid force Id's to the global.
@@ -855,14 +857,14 @@ BiterRevive.OnSettingChanged = function(event)
                 global.blacklistedForceIds[force.index] = true
             else
                 settingErrorMessage = "Biter Revive - Invalid force name provided: " .. forceName
-                game.print(settingErrorMessage, Colors.lightred)
+                LoggingUtils.LogPrintError(settingErrorMessage)
                 table.insert(settingErrorMessages, settingErrorMessage)
             end
         end
 
         -- Only notify about the change if the setting was changed
         if changed then
-            game.print("Biter Revive - Blacklisted force Ids changed to: " .. Utils.TableKeyToNumberedListString(forceNames))
+            game.print("Biter Revive - Blacklisted force Ids changed to: " .. TableUtils.TableKeyToNumberedListString(forceNames))
         end
     end
 
@@ -886,37 +888,37 @@ end
 --- Handler of the RCON command "biter_revive_add_modifier".
 ---@param command CustomCommandData
 BiterRevive.OnCommand_AddModifier = function(command)
-    local args = Commands.GetArgumentsFromCommand(command.parameter)
-    local errorMessageStart = "Biter Revive - command biter_revive_add_modifier "
+    local args = CommandUtils.GetArgumentsFromCommand(command.parameter)
+    local commandName = "command biter_revive_add_modifier"
 
     -- Check the top level JSON object table.
     local data = args[1]
-    if not Commands.ParseTableArgument(data, true, command.name, "Json object", CommandAttributes) then
+    if not CommandUtils.CheckTableArgument(data, true, command.name, "Json object", CommandAttributes, command.parameter) then
         return
     end
 
     -- Check the main attributes of the object.
 
-    local durationSeconds = data.duration ---@type Second
-    if not Commands.ParseNumberArgument(durationSeconds, "integer", true, command.name, "duration", 0) then
+    local durationSeconds = data.duration ---@type uint
+    if not CommandUtils.CheckNumberArgument(durationSeconds, "int", true, command.name, "duration", nil, nil, command.parameter) then
         return
     end
     local durationTicks = durationSeconds * 60 --[[@as uint]]
 
     local priority = data.priority ---@type CommandPriority
-    if not Commands.ParseStringArgument(priority, true, command.name, "priority", CommandPriority) then
+    if not CommandUtils.CheckStringArgument(priority, true, command.name, "priority", CommandPriority, command.parameter) then
         return
     end
 
     local settings = data.settings ---@type table<CommandSettingNames, double>
-    if not Commands.ParseTableArgument(settings, true, command.name, "settings", CommandSettingNames) then
+    if not CommandUtils.CheckTableArgument(settings, true, command.name, "settings", CommandSettingNames, command.parameter) then
         return
     end
 
     -- Check the settings specific fields in the object. Note that none of the settings force value ranges.
 
     local evoMinPercent_raw = settings["evoMin"] ---@type double
-    if not Commands.ParseNumberArgument(evoMinPercent_raw, "double", false, command.name, "evoMin") then
+    if not CommandUtils.CheckNumberArgument(evoMinPercent_raw, "double", false, command.name, "evoMin", nil, nil, command.parameter) then
         return
     end
     local evoMin ---@type double
@@ -925,7 +927,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
     end
 
     local evoMaxPercent_raw = settings["evoMax"] ---@type double
-    if not Commands.ParseNumberArgument(evoMaxPercent_raw, "double", false, command.name, "evoMax") then
+    if not CommandUtils.CheckNumberArgument(evoMaxPercent_raw, "double", false, command.name, "evoMax", nil, nil, command.parameter) then
         return
     end
     local evoMax ---@type double
@@ -934,7 +936,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
     end
 
     local chanceBasePercent_raw = settings["chanceBase"] ---@type double
-    if not Commands.ParseNumberArgument(chanceBasePercent_raw, "double", false, command.name, "chanceBase") then
+    if not CommandUtils.CheckNumberArgument(chanceBasePercent_raw, "double", false, command.name, "chanceBase", nil, nil, command.parameter) then
         return
     end
     local chanceBase ---@type double
@@ -944,12 +946,12 @@ BiterRevive.OnCommand_AddModifier = function(command)
 
     -- No modifier on this one.
     local chancePerEvo = settings["chancePerEvo"] ---@type double
-    if not Commands.ParseNumberArgument(chancePerEvo, "double", false, command.name, "chancePerEvo") then
+    if not CommandUtils.CheckNumberArgument(chancePerEvo, "double", false, command.name, "chancePerEvo", nil, nil, command.parameter) then
         return
     end
 
     local chanceFormula_raw = settings["chanceFormula"] ---@type string
-    if not Commands.ParseStringArgument(chanceFormula_raw, false, command.name, "chanceFormula") then
+    if not CommandUtils.CheckStringArgument(chanceFormula_raw, false, command.name, "chanceFormula", nil, command.parameter) then
         return
     end
     local chanceFormula ---@type string|nil
@@ -960,7 +962,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
             chanceFormula, errorMessage = BiterRevive.GetValidatedFormulaString(chanceFormula_raw)
             if errorMessage ~= nil then
                 -- Formula is bad.
-                game.print(errorMessageStart .. "Invalid revive chance formula provided so it's being ignored. Error: " .. errorMessage, Colors.lightred)
+                CommandUtils.LogPrintError(commandName, "chanceFormula", "Invalid revive chance formula provided so it's being ignored. Error: " .. errorMessage, command.parameter)
                 return
             end
         else
@@ -969,8 +971,8 @@ BiterRevive.OnCommand_AddModifier = function(command)
         end
     end
 
-    local delayMinSeconds_raw = settings["delayMin"] ---@type Second
-    if not Commands.ParseNumberArgument(delayMinSeconds_raw, "integer", false, command.name, "delayMin") then
+    local delayMinSeconds_raw = settings["delayMin"] ---@type uint
+    if not CommandUtils.CheckNumberArgument(delayMinSeconds_raw, "int", false, command.name, "delayMin", nil, nil, command.parameter) then
         return
     end
     local delayMin ---@type uint
@@ -978,8 +980,8 @@ BiterRevive.OnCommand_AddModifier = function(command)
         delayMin = delayMinSeconds_raw * 60 --[[@as uint]]
     end
 
-    local delayMaxSeconds_raw = settings["delayMax"] ---@type Second
-    if not Commands.ParseNumberArgument(delayMaxSeconds_raw, "integer", false, command.name, "delayMax") then
+    local delayMaxSeconds_raw = settings["delayMax"] ---@type uint
+    if not CommandUtils.CheckNumberArgument(delayMaxSeconds_raw, "int", false, command.name, "delayMax", nil, nil, command.parameter) then
         return
     end
     local delayMax ---@type uint
@@ -988,7 +990,7 @@ BiterRevive.OnCommand_AddModifier = function(command)
     end
 
     local delayText_raw = settings["delayText"] ---@type string
-    if not Commands.ParseStringArgument(delayText_raw, false, command.name, "delayText") then
+    if not CommandUtils.CheckStringArgument(delayText_raw, false, command.name, "delayText", nil, command.parameter) then
         return
     end
     local delayText ---@type string|nil
@@ -1003,13 +1005,13 @@ BiterRevive.OnCommand_AddModifier = function(command)
 
     -- No modifier on this one.
     local maxRevives = settings["maxRevives"] ---@type uint
-    if not Commands.ParseNumberArgument(maxRevives, "integer", false, command.name, "maxRevives") then
+    if not CommandUtils.CheckNumberArgument(maxRevives, "int", false, command.name, "maxRevives", nil, nil, command.parameter) then
         return
     end
 
     -- Check that one or more settings where included, otherwise the command will do nothing.
     if evoMin == nil and evoMax == nil and chanceBase == nil and chancePerEvo == nil and chanceFormula == nil and delayMin == nil and delayMax == nil and delayText == nil and maxRevives == nil then
-        game.print(errorMessageStart .. "no actual setting was included within the settings table.", Colors.lightred)
+        CommandUtils.LogPrintError(commandName, nil, "no actual setting was included within the settings table.", command.parameter)
         return
     end
 
@@ -1104,7 +1106,7 @@ BiterRevive.OnCommand_DumpStateData = function(command)
     dumpText = dumpText .. "reviveChancePerEvoPercentFormula, " .. tostring(global.reviveChancePerEvoPercentFormula) .. "\r\n"
     dumpText = dumpText .. "reviveDelayMin, " .. tostring(global.reviveDelayMin) .. "\r\n"
     dumpText = dumpText .. "reviveDelayMax, " .. tostring(global.reviveDelayMax) .. "\r\n"
-    dumpText = dumpText .. "reviveDelayText, " .. tostring(string.gsub(Utils.TableValueToCommaString(global.reviveDelayTexts), ",", ";")) .. "\r\n"
+    dumpText = dumpText .. "reviveDelayText, " .. tostring(string.gsub(TableUtils.TableValueToCommaString(global.reviveDelayTexts), ",", ";")) .. "\r\n"
     dumpText = dumpText .. "maxRevivesPerUnit, " .. tostring(global.maxRevivesPerUnit) .. "\r\n"
 
     -- Write out the file to disk and message the player.
