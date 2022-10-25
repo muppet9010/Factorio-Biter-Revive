@@ -1,3 +1,2 @@
-Revived biters should be set to target everything.
 Add remote interfaces to commands.
-re-do readme so command/remote interface description is nicer.
+re-do readme so command/remote interface description is nicer. Also present as being fully usable, plus streamer features.

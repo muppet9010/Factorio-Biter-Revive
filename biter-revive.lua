@@ -50,6 +50,8 @@ local CommandSettingNames = {
 ---@field position MapPosition
 ---@field previousRevives uint
 ---@field corpses LuaEntity[]
+---@field command Command|nil
+---@field distractionCommand Command|nil
 
 ---@class ForceReviveChanceObject
 ---@field reviveChance double @ Number between 0 and 1.
@@ -210,7 +212,9 @@ BiterRevive.OnEntityDied = function(event)
         forceId = unitsForce_index,
         surface = entity.surface,
         position = nil, -- Populate by on_post_entity_died event as its a non API call then.
-        previousRevives = previousRevives
+        previousRevives = previousRevives,
+        command = entity.command,
+        distractionCommand = entity.distraction_command
     }
 
     -- Store a reference to the reviveDetails as we will add to it from another event.
@@ -248,7 +252,7 @@ BiterRevive.OnPostEntityDied = function(event)
 
     -- Add the delay text if appropriate. Target it at the first corpse as this is hopefully the main one so when the corpse goes the text goes with it.
     if #global.reviveDelayTexts > 0 and #reviveDetails.corpses > 0 then
-        local textString = global.reviveDelayTexts[math.random(1, #global.reviveDelayTexts)]
+        local textString = global.reviveDelayTexts[math_random(1, #global.reviveDelayTexts)]
         rendering.draw_text {
             text = textString,
             color = Colors.white,
@@ -272,7 +276,7 @@ BiterRevive.UpdateForceData = function(forceReviveChanceObject, currentTick)
 
         -- Work out how much evo is above min, up to the max setting.
         local rawForceAboveMin = currentForceEvo - global.evolutionRequirementMin
-        local maxForceDifAllowed = math.max(global.evolutionRequirementMax - global.evolutionRequirementMin, 0)
+        local maxForceDifAllowed = math_max(global.evolutionRequirementMax - global.evolutionRequirementMin, 0)
         local forceEvoAboveMin = math_min(rawForceAboveMin, maxForceDifAllowed)
         local chanceForEvo ---@type double
 
@@ -424,6 +428,14 @@ BiterRevive.ProcessReviveQueue = function(event)
                             corpse.destroy()
                         end
                     end
+
+                    -- Give this unit its old commands back if it had any. Have ti check any entity referenced in the command is still valid, otherwise can;t give the command.
+                    if reviveDetails.command ~= nil and BiterRevive.ValidateCommandEntities(reviveDetails.command) then
+                        revivedBiter.set_command(reviveDetails.command)
+                    end
+                    if reviveDetails.distractionCommand ~= nil and BiterRevive.ValidateCommandEntities(reviveDetails.distractionCommand) then
+                        revivedBiter.set_distraction_command(reviveDetails.distractionCommand)
+                    end
                 end
 
                 -- Remove this revive from the current tick as done.
@@ -464,6 +476,32 @@ BiterRevive.ProcessReviveQueue = function(event)
         -- Ran out of revives mid processing the last tick so use the nextTick as worked out within the logic.
         global.reviveQueueNextTickToProcess = nextTickToProcess
     end
+end
+
+--- Checks that a command only references valid entities.
+---@param command Command
+---@return boolean isValid
+BiterRevive.ValidateCommandEntities = function(command)
+    if command.target ~= nil and not command.target.valid then
+        return false
+    elseif command.destination_entity ~= nil and not command.destination_entity.valid then
+        return false
+    elseif command.from ~= nil and not command.from.valid then
+        return false
+    end
+    if command.commands ~= nil then
+        for subCommandIndex, subCommand in pairs(command.commands) do
+            if not BiterRevive.ValidateCommandEntities(subCommand) then
+                -- Remove any invalid sub commands.
+                table.remove(command.commands, subCommandIndex)
+            end
+            if #command.commands == 0 then
+                -- If there's no valid commands left in this compound command then the whole command is invalid.
+                return false
+            end
+        end
+    end
+    return true
 end
 
 --- Called when forces are merged and we need to update all data for this.

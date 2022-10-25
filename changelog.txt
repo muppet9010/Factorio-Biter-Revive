@@ -3,6 +3,7 @@ Version: 1.1.2
 Date: 2022-10-XXXX
   Features:
   Changes:
+    - Biters will revive back to their pre-death command if its still valid. Should help stop them idling around as much.
   Bugfixes:
   Info:
 ---------------------------------------------------------------------------------------------------
