@@ -921,9 +921,20 @@ BiterRevive.OnSettingChanged = function(event)
 end
 
 --- Handler of the RCON command "biter_revive_add_modifier".
----@param command CustomCommandData
-BiterRevive.OnCommand_AddModifier = function(command)
-    local args = CommandUtils.GetArgumentsFromCommand(command.parameter)
+---@param command CustomCommandData|nil
+---@param fakeCommandData table # used by the remote interface to pass the same data in.
+BiterRevive.OnCommand_AddModifier = function(command, fakeCommandData)
+    local args
+    if command ~= nil then
+        args = CommandUtils.GetArgumentsFromCommand(command.parameter)
+    else
+        args = { fakeCommandData }
+        command = {
+            name = "add_modifier",
+            tick = game.tick,
+            parameter = game.table_to_json(fakeCommandData)
+        }
+    end ---@cast command - nil
     local commandName = "command biter_revive_add_modifier"
 
     -- Check the top level JSON object table.
@@ -1104,6 +1115,13 @@ BiterRevive.GetValidatedFormulaString = function(formulaStringToTest)
         end
     end
     return formulaStringToTest, nil
+end
+
+--- Called by the remote interface to add a modifier.
+--- CODE NOTE: this is a slightly bodged approach as it will report any errors tagged as being a command.
+---@param data table
+BiterRevive.AddModifier_Remote = function(data)
+    BiterRevive.OnCommand_AddModifier(nil, data)
 end
 
 --- Dumps the mod setting cache, active commands and runtime setting values to a text file on the players pc.

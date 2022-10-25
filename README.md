@@ -1,34 +1,41 @@
 # Factorio-Biter-Revive
 
-Any biter that dies will have a chance to revive back to life based on mod settings and temporary settings from commands (RCON).
+Any biter that dies will have a chance to revive back to life.
 
 ![Biter Revive Example](https://giant.gfycat.com/ChillyKnobbyAffenpinscher.mp4)
 
-The mod is focused on facilitating streamer integrations and so uses a layered settings approach, but can be used standalone using mod settings alone.
+Includes a large selection of mod settings to control base revival chance and behaviours. To facilitating streamer integrations layered temporary settings can be applied as well via Remote Interface Calls or Factorio Commands.
 
 
 
 Details
 =======
 
-- Any "unit" entity is available for revival with various mod settings allowing fine tuning of what's excluded by entity and force name. By default the mod settings are configured only for the compilatron unit to be excluded.
+- Any `unit` entity is available for revival with various mod settings allowing fine tuning of what's excluded by entity and force name. By default the mod settings are configured only for the compilatron unit to be excluded.
 - Revive chance is a scale based on configurable settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
 - Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dying.
 - Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the biter dies, but instead a fraction of a second later.
 - Biters waiting their delay time to revive can have configurable text shown above them until they revive, i.e. snore, BRB, its just a flesh wound, etc.
 - There is a mod setting to limit how many times the same unit can be revived. It defaults to unlimited. Its useful for cases of very high revive rate when you don't want the risk of near infinite revivals due to random chances.
 - If a biter revive location is blocked by buildings after the biter has died then the biter will revive in the nearest available location. This is to prevent griefing by building large walls or buildings over delayed revival biters.
+- A revived biter will have its pre death attack command applied back to it if possible. Otherwise the revived biters will be controlled by Factorio as normal.
 
 
 
 Revive Chance Formula
 =====================
 
-This is a special setting for when you want non linear revive chance growth in relation to evolution. When the default value of the setting is blank/empty then the simpler "Chance of revive % per evolution %" setting value will be used by the mod. When the formula setting is populated it will take priority over the simpler setting.
+This is a special setting for when you want non linear revive chance growth in relation to evolution. When the default value of the setting is blank/empty then the simpler `Chance of revive % per evolution %` setting value will be used by the mod. When the formula setting is populated it will take priority over the simpler value setting.
 
-The formula must be valid Lua written as suitable for use after the keyword "return" and will be run within the mod. The biter's force evolution above the minimum runtime setting will be passed in as a Lua variable "evo" as a numeric value of the evolution percentage. So if the minimum is 70 (%) and the biters force evo is 72 (%) the "evo" variable will have a value of 2.
+The formula must be valid Lua written as suitable for use after the keyword `return` and will be run within the mod. The biter's force evolution above the minimum runtime setting will be passed in as a Lua variable `evo` as a numeric value of the evolution percentage. So if the minimum is 70 (%) and the biters force evo is 72 (%) the `evo` variable will have a value of 2.
 
 Example of valid formula string: `evo * 1.5`
+
+-----------------------
+
+-----------------------
+
+-----------------------
 
 
 
@@ -67,20 +74,20 @@ Syntax
 
 Command name: `biter_revive_add_modifier`
 
-Commands are provided with a single JSON argument with the below structure:
+Commands are provided with a single object in JSON format with the below structure:
 
 - duration = number of seconds the command will be active for (integer).
 - settings = a table (dictionary) of setting name (string) and value (double). The setting names supported are:
-  - evoMin = the evolution minimum required for reviving to start % as a number (double), i.e. 50 = 50% - equivalent to the mod setting "Evolution % minimum for reviving".
-  - evoMax = the evolution maximum when the revive chance doesn't increase any more % as a number (double), i.e. 80 = 80% - equivalent to the mod setting "Evolution % for maximum reviving chance".
-  - chanceBase = the revival chance % when at minimum evolution as a number (double), i.e. 5 = 5% - Equivalent of mod setting "Chance of revival starting %".
-  - chancePerEvo = the revive chance % increase per evolution % up to the max evolution limit as a number (double), i.e. 2 = 2% - equivalent to the mod setting "Chance of revive % per evolution %".
-  - chanceFormula = the revival chance formula as a text string - Equivalent of mod setting "Chance of revive formula". Note: this setting is an exception to the standard command evaluation logic.
-  - delayMin = the revive delay minimum in seconds as a number (integer), i.e. 0 = 0 seconds - equivalent to the mod setting "Revive delay minimum seconds".
-  - delayMax = the revive delay maximum in seconds as a number (integer), i.e. 5 = 5 seconds - equivalent to the mod setting "Revive delay maximum seconds".
-  - delayText = the text to be shown above biters that are waiting their delay to revive, as a comma separated string list (string) - equivalent to the mod setting "Delayed revive text". Note: this setting is an exception to the standard command evaluation logic.
-  - maxRevives = the maximum number of times a single unit can be revived (integer), with 0 being unlimited (nearly) - equivalent to the mod setting "Maximum revives per unit".
-- priority = the priority for this command as a text string. Supported values "enforced", "base", "add".
+  - evoMin = the evolution minimum required for reviving to start % as a number (double), i.e. 50 = 50% - equivalent to the mod setting `Evolution % minimum for reviving`.
+  - evoMax = the evolution maximum when the revive chance doesn't increase any more % as a number (double), i.e. 80 = 80% - equivalent to the mod setting `Evolution % for maximum reviving chance`.
+  - chanceBase = the revival chance % when at minimum evolution as a number (double), i.e. 5 = 5% - Equivalent of mod setting `Chance of revival starting %`.
+  - chancePerEvo = the revive chance % increase per evolution % up to the max evolution limit as a number (double), i.e. 2 = 2% - equivalent to the mod setting `Chance of revive % per evolution %`.
+  - chanceFormula = the revival chance formula as a text string - Equivalent of mod setting `Chance of revive formula`. Note: this setting is an exception to the standard command evaluation logic.
+  - delayMin = the revive delay minimum in seconds as a number (integer), i.e. 0 = 0 seconds - equivalent to the mod setting `Revive delay minimum seconds`.
+  - delayMax = the revive delay maximum in seconds as a number (integer), i.e. 5 = 5 seconds - equivalent to the mod setting `Revive delay maximum seconds`.
+  - delayText = the text to be shown above biters that are waiting their delay to revive, as a comma separated string list (string) - equivalent to the mod setting `Delayed revive text`. Note: this setting is an exception to the standard command evaluation logic.
+  - maxRevives = the maximum number of times a single unit can be revived (integer), with 0 being unlimited (nearly) - equivalent to the mod setting `Maximum revives per unit`.
+- priority = the priority for this command as a text string. Supported values `enforced`, `base`, `add`.
 
 #### Example Commands
 
@@ -98,6 +105,6 @@ These are provided as JSON strings and can be copy pasted straight into the Fact
 Debug Command
 =============
 
-There is a debug command that will write out state data to assist with any issue debugging. It writes the state data to a file in the players Factorio script-data folder called "biter_revive_state_data.csv". It will overwrite any previous debug data file of the same name.
+There is a debug command that will write out state data to assist with any issue debugging. It writes the state data to a file in the players Factorio script-data folder called `biter_revive_state_data.csv`. It will overwrite any previous debug data file of the same name.
 
 Command Name: `biter_revive_dump_state_data`

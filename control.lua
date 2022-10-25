@@ -5,7 +5,11 @@ local function CreateGlobals()
 end
 
 local function OnLoad()
-    --Any Remote Interface registration calls can go in here or in root of control.lua
+    remote.remove_interface("biter_revive")
+    remote.add_interface("biter_revive", {
+        add_modifier = BiterRevive.AddModifier_Remote,
+    })
+
     BiterRevive.OnLoad()
 end
 
