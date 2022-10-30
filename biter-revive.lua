@@ -5,6 +5,7 @@ local Colors = require("utility.lists.colors")
 local CommandUtils = require("utility.helper-utils.commands-utils")
 local LoggingUtils = require("utility.helper-utils.logging-utils")
 local math_min, math_max, math_floor, math_random = math.min, math.max, math.floor, math.random
+local Events = require("utility.manager-libraries.events")
 
 local DelayGroupingTicks = 15 -- How many ticks between each group of biters to revive.
 local ForceEvoCacheTicks = 600 -- How long to cache a forces evo for before it is refreshed on next dead unit. Currently 10 seconds as a balance between proper caching and reacting to a sudden evolution jump from a modded/scripted event.
@@ -73,6 +74,16 @@ local CommandSettingNames = {
 ---@field delayMax uint @ Range of >= 0. Ticks.
 ---@field delayText string|nil @ If populated a comma separated string.
 ---@field maxRevives uint
+
+-- Do this with locals so its updated as part of OnLoad and the calling of the remotes by other mods to get the event Ids will also occur during the OnLoad data stage.
+local BiterWillBeRevivedEventId ---@type uint # Populated during OnLoad and used at run time.
+local BiterWillBeRevivedCustomEventUsed = false ---@type boolean # Updated when another mod requests the event Id.
+local BiterWontBeRevivedEventId ---@type uint # Populated during OnLoad and used at run time.
+local BiterWontBeRevivedCustomEventUsed = false ---@type boolean # Updated when another mod requests the event Id.
+local BiterReviveFailedEventId ---@type uint # Populated during OnLoad and used at run time.
+local BiterReviveFailedCustomEventUsed = false ---@type boolean # Updated when another mod requests the event Id.
+local BiterReviveSuccessEventId ---@type uint # Populated during OnLoad and used at run time.
+local BiterReviveSuccessCustomEventUsed = false ---@type boolean # Updated when another mod requests the event Id.
 
 BiterRevive.CreateGlobals = function()
     global.reviveQueue = global.reviveQueue or {} ---@type table<uint, ReviveQueueTickObject[]> @ This will be a sparse table at both the Tick key level and in the array of ReviveQueueTickObjects once they start to be processed.
@@ -150,6 +161,11 @@ BiterRevive.OnLoad = function()
     script.on_event(defines.events.on_surface_cleared, BiterRevive.OnSurfaceRemoved)
     CommandUtils.Register("biter_revive_add_modifier", { "command.biter_revive_add_modifier" }, BiterRevive.OnCommand_AddModifier, true)
     CommandUtils.Register("biter_revive_dump_state_data", { "command.biter_revive_dump_state_data" }, BiterRevive.OnCommand_DumpStateData, true)
+
+    BiterWillBeRevivedEventId = Events.RegisterCustomEventName("BiterRevive.BiterRevived")
+    BiterWontBeRevivedEventId = Events.RegisterCustomEventName("BiterRevive.BiterNotRevived")
+    BiterReviveFailedEventId = Events.RegisterCustomEventName("BiterRevive.BiterReviveFailed")
+    BiterReviveSuccessEventId = Events.RegisterCustomEventName("BiterRevive.BiterReviveSuccess")
 end
 
 --- When a monitored entity type has died review it and if appropriate add it to the revive queue.
@@ -165,12 +181,14 @@ BiterRevive.OnEntityDied = function(event)
 
     -- If there is a unit revive limit check if the unit has reached it.
     if global.maxRevivesPerUnit ~= 0 and previousRevives >= global.maxRevivesPerUnit then
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity)
         return
     end
 
     local entity_name = entity.name
     -- Check if the prototype name is blacklisted.
     if global.blacklistedPrototypeNames[entity_name] ~= nil then
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_name)
         return
     end
 
@@ -178,6 +196,7 @@ BiterRevive.OnEntityDied = function(event)
     local unitsForce_index = unitsForce.index
     -- Check if the force is blacklisted.
     if global.blacklistedForceIds[unitsForce_index] ~= nil then
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_name, unitsForce)
         return
     end
 
@@ -195,10 +214,12 @@ BiterRevive.OnEntityDied = function(event)
     -- Random chance of entity being revived.
     if forceReviveChanceObject.reviveChance == 0 then
         -- No chance so just abort.
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_name, unitsForce)
         return
     end
     if math_random() > forceReviveChanceObject.reviveChance then
         -- Failed random so abort.
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_name, unitsForce)
         return
     end
 
@@ -230,7 +251,33 @@ BiterRevive.OnEntityDied = function(event)
         global.reviveQueue[delayGroupingTick] = {}
         tickQueue = global.reviveQueue[delayGroupingTick]
     end
-    table.insert(tickQueue, reviveDetails)
+    tickQueue[#tickQueue + 1] = reviveDetails
+
+    -- Let other mods know we will be reviving this biter.
+    BiterRevive.RaiseWillBeRevivedCustomEvent(entity, reviveDetails)
+end
+
+--- Called when a biter has been recorded to be revived in the future.
+---@param entity LuaEntity
+---@param reviveDetails ReviveQueueTickObject
+BiterRevive.RaiseWillBeRevivedCustomEvent = function(entity, reviveDetails)
+    -- If no other mods wants the event don't bother raising it.
+    if not BiterWillBeRevivedCustomEventUsed then return end
+
+    local customEventDetails = { name = BiterWillBeRevivedEventId, entity = entity, unitNumber = reviveDetails.unitNumber, surface = reviveDetails.surface, force = reviveDetails.force }
+    Events.RaiseEvent(customEventDetails)
+end
+
+--- Called when a biter won't be revived in the future.
+---@param entity LuaEntity
+---@param entityName string|nil
+---@param force LuaForce|nil
+BiterRevive.RaiseWontBeRevivedCustomEvent = function(entity, entityName, force)
+    -- If no other mods wants the event don't bother raising it.
+    if not BiterWontBeRevivedCustomEventUsed then return end
+
+    local customEventDetails = { name = BiterWontBeRevivedEventId, entity = entity, entityName = entityName, force = force }
+    Events.RaiseEvent(customEventDetails)
 end
 
 --- Called after the entity has died and the corpse is present.
@@ -405,8 +452,7 @@ BiterRevive.ProcessReviveQueue = function(event)
                 spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 20, 0.1)
                 -- If no spawning point is found just forget about this revive as very unlikely to happen.
                 if spawnPosition ~= nil then
-                    revivedBiter =
-                    reviveDetails.surface.create_entity {
+                    revivedBiter = reviveDetails.surface.create_entity {
                         name = reviveDetails.prototypeName,
                         position = spawnPosition,
                         force = reviveDetails.force,
@@ -414,6 +460,11 @@ BiterRevive.ProcessReviveQueue = function(event)
                         create_build_effect_smoke = false,
                         raise_built = true
                     }
+                end
+
+                -- If the revive failed for any reason notify any listening mods. As they would have been expecting a revive from previous broadcasted events.
+                if revivedBiter == nil then
+                    BiterRevive.RaiseReviveFailedCustomEvent(reviveDetails)
                 end
 
                 -- If the unit was revived do some further tasks.
@@ -476,6 +527,26 @@ BiterRevive.ProcessReviveQueue = function(event)
         -- Ran out of revives mid processing the last tick so use the nextTick as worked out within the logic.
         global.reviveQueueNextTickToProcess = nextTickToProcess
     end
+end
+
+--- Called when a biter has failed to be revived that was scheduled to be.
+---@param reviveDetails ReviveQueueTickObject
+BiterRevive.RaiseReviveFailedCustomEvent = function(reviveDetails)
+    -- If no other mods wants the event don't bother raising it.
+    if not BiterReviveFailedCustomEventUsed then return end
+
+    local customEventDetails = { name = BiterReviveFailedEventId, unitNumber = reviveDetails.unitNumber, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force }
+    Events.RaiseEvent(customEventDetails)
+end
+
+--- Called when a scheduled biter was successful in being revived.
+---@param reviveDetails ReviveQueueTickObject
+BiterRevive.RaiseReviveSuccessCustomEvent = function(reviveDetails)
+    -- If no other mods wants the event don't bother raising it.
+    if not BiterReviveSuccessCustomEventUsed then return end
+
+    local customEventDetails = { name = BiterReviveSuccessEventId, unitNumber = reviveDetails.unitNumber, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force }
+    Events.RaiseEvent(customEventDetails)
 end
 
 --- Checks that a command only references valid entities.
@@ -1165,6 +1236,34 @@ BiterRevive.OnCommand_DumpStateData = function(command)
     -- Write out the file to disk and message the player.
     game.write_file("biter_revive_state_data.csv", dumpText, false, command.player_index)
     game.get_player(command.player_index).print("Biter Revive - state data written to Factorio/script-output/biter_revive_state_data.csv", Colors.green)
+end
+
+--- Called by other mods to get the custom event Id we will raise when a biter is chosen to be revived in the future.
+--- We also log if this was ever called so we only raise events if needed.
+BiterRevive.GetBiterWillBeRevivedEventId_Remote = function()
+    BiterWillBeRevivedCustomEventUsed = true
+    return BiterWillBeRevivedEventId
+end
+
+--- Called by other mods to get the custom event Id we will raise when a biter is NOT chosen to be revived in the future.
+--- We also log if this was ever called so we only raise events if needed.
+BiterRevive.GetBiterWontBeRevivedEventId_Remote = function()
+    BiterWontBeRevivedCustomEventUsed = true
+    return BiterWontBeRevivedEventId
+end
+
+--- Called by other mods to get the custom event Id we will raise when a biter revive fails at execution time.
+--- We also log if this was ever called so we only raise events if needed.
+BiterRevive.GetBiterReviveFailedEventId_Remote = function()
+    BiterReviveFailedCustomEventUsed = true
+    return BiterReviveFailedEventId
+end
+
+--- Called by other mods to get the custom event Id we will raise when a biter revive is successful at execution time.
+--- We also log if this was ever called so we only raise events if needed.
+BiterRevive.GetBiterReviveSuccessEventId_Remote = function()
+    BiterReviveSuccessCustomEventUsed = true
+    return BiterReviveSuccessEventId
 end
 
 return BiterRevive

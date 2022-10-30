@@ -2,6 +2,7 @@
 Version: 1.1.3
 Date: 2022-11-xxx
   Features:
+    - Added Custom Events that are raised when this mod does and does not revive a valid target. Remote Interfaces added to get these custom event Ids. See readme for details.
   Changes:
   Bugfixes:
   Info:
