@@ -147,3 +147,20 @@ Debug Command
 There is a debug command that will write out state data to assist with any issue debugging. It writes the state data to a file in the players Factorio script-data folder called `biter_revive_state_data.csv`. It will overwrite any previous debug data file of the same name.
 
 Command Name: `biter_revive_dump_state_data`
+
+-----------------------
+
+-----------------------
+
+-----------------------
+
+
+
+Mod Compatibility Events
+=============
+
+The mod raises a number of custom events based around if it will/won't revive biters and if the revives are successful or not. This allows other mods to react to non revived biters (truly dead) and avoid reacting to biters that are revived as if they actually died.
+
+This logic is utilised by my Biter Reincarnation mod to only reincarnate truly dead biters in to trees.
+
+Modding details of these events can be found here: https://github.com/muppet9010/Factorio-Biter-Revive/blob/main/MOD-COMPATIBILITY.md

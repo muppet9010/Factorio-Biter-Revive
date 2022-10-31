@@ -47,6 +47,7 @@ local CommandSettingNames = {
 ---@field prototypeName string
 ---@field orientation RealOrientation
 ---@field force LuaForce
+---@field forceId uint
 ---@field surface LuaSurface
 ---@field position MapPosition
 ---@field previousRevives uint
@@ -181,14 +182,14 @@ BiterRevive.OnEntityDied = function(event)
 
     -- If there is a unit revive limit check if the unit has reached it.
     if global.maxRevivesPerUnit ~= 0 and previousRevives >= global.maxRevivesPerUnit then
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber)
         return
     end
 
     local entity_name = entity.name
     -- Check if the prototype name is blacklisted.
     if global.blacklistedPrototypeNames[entity_name] ~= nil then
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_name)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, entity_name)
         return
     end
 
@@ -196,7 +197,7 @@ BiterRevive.OnEntityDied = function(event)
     local unitsForce_index = unitsForce.index
     -- Check if the force is blacklisted.
     if global.blacklistedForceIds[unitsForce_index] ~= nil then
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_name, unitsForce)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, entity_name, unitsForce, unitsForce_index)
         return
     end
 
@@ -204,8 +205,9 @@ BiterRevive.OnEntityDied = function(event)
     local forceReviveChanceObject = global.forcesReviveChance[unitsForce_index]
     if forceReviveChanceObject == nil then
         -- Create the biter force as it doesn't exist. The large negative lastCheckedTick will ensure it is updated on first use.
-        global.forcesReviveChance[unitsForce_index] = { force = unitsForce --[[@as LuaForce]] , forceId = unitsForce_index, lastCheckedTick = -9999999, reviveChance = nil }
-        forceReviveChanceObject = global.forcesReviveChance[unitsForce_index]
+        ---@type ForceReviveChanceObject
+        forceReviveChanceObject = { force = unitsForce --[[@as LuaForce]] , forceId = unitsForce_index, lastCheckedTick = -9999999, reviveChance = nil }
+        global.forcesReviveChance[unitsForce_index] = forceReviveChanceObject
     end
     if forceReviveChanceObject.lastCheckedTick < event.tick - ForceEvoCacheTicks then
         BiterRevive.UpdateForceData(forceReviveChanceObject, event.tick)
@@ -214,12 +216,12 @@ BiterRevive.OnEntityDied = function(event)
     -- Random chance of entity being revived.
     if forceReviveChanceObject.reviveChance == 0 then
         -- No chance so just abort.
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_name, unitsForce)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, entity_name, unitsForce, unitsForce_index)
         return
     end
     if math_random() > forceReviveChanceObject.reviveChance then
         -- Failed random so abort.
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_name, unitsForce)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, entity_name, unitsForce, unitsForce_index)
         return
     end
 
@@ -264,19 +266,21 @@ BiterRevive.RaiseWillBeRevivedCustomEvent = function(entity, reviveDetails)
     -- If no other mods wants the event don't bother raising it.
     if not BiterWillBeRevivedCustomEventUsed then return end
 
-    local customEventDetails = { name = BiterWillBeRevivedEventId, entity = entity, unitNumber = reviveDetails.unitNumber, surface = reviveDetails.surface, force = reviveDetails.force }
+    local customEventDetails = { name = BiterWillBeRevivedEventId, entity = entity, unitNumber = reviveDetails.unitNumber, entityName = reviveDetails.prototypeName, surface = reviveDetails.surface, force = reviveDetails.force, forceIndex = reviveDetails.forceId, orientation = reviveDetails.orientation }
     Events.RaiseEvent(customEventDetails)
 end
 
 --- Called when a biter won't be revived in the future.
 ---@param entity LuaEntity
+---@param entityUnitNumber uint
 ---@param entityName string|nil
 ---@param force LuaForce|nil
-BiterRevive.RaiseWontBeRevivedCustomEvent = function(entity, entityName, force)
+---@param forceIndex uint|nil
+BiterRevive.RaiseWontBeRevivedCustomEvent = function(entity, entityUnitNumber, entityName, force, forceIndex)
     -- If no other mods wants the event don't bother raising it.
     if not BiterWontBeRevivedCustomEventUsed then return end
 
-    local customEventDetails = { name = BiterWontBeRevivedEventId, entity = entity, entityName = entityName, force = force }
+    local customEventDetails = { name = BiterWontBeRevivedEventId, entity = entity, unitNumber = entityUnitNumber, entityName = entityName, force = force, forceIndex = forceIndex }
     Events.RaiseEvent(customEventDetails)
 end
 
@@ -535,7 +539,7 @@ BiterRevive.RaiseReviveFailedCustomEvent = function(reviveDetails)
     -- If no other mods wants the event don't bother raising it.
     if not BiterReviveFailedCustomEventUsed then return end
 
-    local customEventDetails = { name = BiterReviveFailedEventId, unitNumber = reviveDetails.unitNumber, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force }
+    local customEventDetails = { name = BiterReviveFailedEventId, unitNumber = reviveDetails.unitNumber, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force, forceIndex = reviveDetails.forceId }
     Events.RaiseEvent(customEventDetails)
 end
 
@@ -545,7 +549,7 @@ BiterRevive.RaiseReviveSuccessCustomEvent = function(reviveDetails)
     -- If no other mods wants the event don't bother raising it.
     if not BiterReviveSuccessCustomEventUsed then return end
 
-    local customEventDetails = { name = BiterReviveSuccessEventId, unitNumber = reviveDetails.unitNumber, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force }
+    local customEventDetails = { name = BiterReviveSuccessEventId, unitNumber = reviveDetails.unitNumber, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force, forceIndex = reviveDetails.forceId }
     Events.RaiseEvent(customEventDetails)
 end
 

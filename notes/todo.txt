@@ -1,4 +1,3 @@
-Publish a custom event for when a biter isn't revived, so other mods can listen for it and not on_entity died. Only for `{ filter = "type", type = "unit" }` and will need to be done in all non-revived cases for units. The failed revive and success revive events includes the unit_number to allow other mods that are tracking expected revives to know it failed.
 Add mod setting to revive worms (biological turrets) equally to biters. Will not include extra options to treat them differently.
 Move the setting handling Lua code in to a separate `scripts` file.
 Move the remotes in to their own `scripts` file.
