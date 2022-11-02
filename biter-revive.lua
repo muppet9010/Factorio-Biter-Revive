@@ -751,9 +751,11 @@ BiterRevive.CalculateCurrentValue = function(settingName, minOrMax, modSettingCa
     -- Sort the active commands in to their priority types for this setting.
     ---@type table<string,number[]>
     local commandsForSetting = { enforced = {}, base = {}, add = {} }
+    local settingCommands
     for _, command in pairs(global.commands) do
         if command[settingName] ~= nil then
-            table.insert(commandsForSetting[command.priority], command[settingName])
+            settingCommands = commandsForSetting[command.priority]
+            settingCommands[#settingCommands + 1] = command[settingName]
         end
     end
 
@@ -880,7 +882,7 @@ BiterRevive.OnSettingChanged = function(event)
                 -- Formula is bad.
                 settingErrorMessage = "Biter Revive - Invalid revive chance formula provided in mod settings so it's being ignored. Error: " .. errorMessage
                 LoggingUtils.LogPrintError(settingErrorMessage)
-                table.insert(settingErrorMessages, settingErrorMessage)
+                settingErrorMessages[#settingErrorMessages + 1] = settingErrorMessage
                 global.modSettings_reviveChancePerEvoPercentFormula = ""
             end
         else
@@ -938,13 +940,13 @@ BiterRevive.OnSettingChanged = function(event)
             for name in pairs(global.blacklistedPrototypeNames) do
                 local prototype = game.entity_prototypes[name]
                 if prototype == nil then
-                    settingErrorMessage = "Biter Revive - unrecognised prototype name `" .. name .. "` in blacklisted prototype names. Is number " .. tostring(count) .. " in the list."
+                    settingErrorMessage = "Biter Revive - unrecognised prototype name `" .. name .. "` in blacklisted prototype names."
                     LoggingUtils.LogPrintError(settingErrorMessage)
-                    table.insert(settingErrorMessages, settingErrorMessage)
+                    settingErrorMessages[#settingErrorMessages + 1] = settingErrorMessage
                 elseif prototype.type ~= "unit" then
                     settingErrorMessage = "Biter Revive - prototype name `" .. name .. "` in blacklisted prototype names isn't of type `unit` and so could never be revived anyways."
                     LoggingUtils.LogPrintError(settingErrorMessage)
-                    table.insert(settingErrorMessages, settingErrorMessage)
+                    settingErrorMessages[#settingErrorMessages + 1] = settingErrorMessage
                 end
                 count = count + 1
             end
@@ -972,7 +974,7 @@ BiterRevive.OnSettingChanged = function(event)
                 else
                     settingErrorMessage = "Biter Revive - Invalid force name provided: " .. forceName
                     LoggingUtils.LogPrintError(settingErrorMessage)
-                    table.insert(settingErrorMessages, settingErrorMessage)
+                    settingErrorMessages[#settingErrorMessages + 1] = settingErrorMessage
                 end
             end
         end

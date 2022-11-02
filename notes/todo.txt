@@ -1,3 +1,1 @@
 Add mod setting to revive worms (biological turrets) equally to biters. Will not include extra options to treat them differently.
-Move the setting handling Lua code in to a separate `scripts` file.
-Move the remotes in to their own `scripts` file.
