@@ -6,6 +6,7 @@ local CommandUtils = require("utility.helper-utils.commands-utils")
 local LoggingUtils = require("utility.helper-utils.logging-utils")
 local math_min, math_max, math_floor, math_random = math.min, math.max, math.floor, math.random
 local Events = require("utility.manager-libraries.events")
+local EntityUtils = require("utility.helper-utils.entity-utils")
 
 local DelayGroupingTicks = 15 -- How many ticks between each group of biters to revive.
 local ForceEvoCacheTicks = 600 -- How long to cache a forces evo for before it is refreshed on next dead unit. Currently 10 seconds as a balance between proper caching and reacting to a sudden evolution jump from a modded/scripted event.
@@ -42,9 +43,15 @@ local CommandSettingNames = {
     maxRevives = "maxRevives"
 }
 
+---@alias ReviveTypes "unit"|"turret"
+
+---@enum MovableEntityTypes
+local MovableEntityTypes = { unit = "unit", character = "character", car = "car", tank = "tank", ["spider-vehicle"] = "spider-vehicle" }
+
 ---@class ReviveQueueTickObject
 ---@field unitNumber uint
 ---@field prototypeName string
+---@field reviveType ReviveTypes
 ---@field orientation RealOrientation
 ---@field force LuaForce
 ---@field forceId uint
@@ -121,6 +128,7 @@ BiterRevive.CreateGlobals = function()
     global.raw_BlacklistedPrototypeNames = global.raw_BlacklistedPrototypeNames or "" ---@type string @ The last recorded raw setting value.
     global.blacklistedForceIds = global.blacklistedForceIds or {} ---@type table<uint, true> @ The force Id as key, with the force name we match against the setting on as the value.
     global.raw_BlacklistedForceNames = global.raw_BlacklistedForceNames or "" ---@type string @ The last recorded raw setting value.
+    global.reviveWorms = global.reviveWorms or false ---@type boolean
 
     global.revivesPerCycle = global.revivesPerCycle or 0 --- How many revives can be done per cycle. Every cycle in each second apart from the one exactly at the start of the second.
     global.revivesPerCycleOnStartOfSecond = global.revivesPerCycleOnStartOfSecond or 0 --- How many revives can be done on the cycle at the start of the second. This makes up for any odd dividing issues with the player setting being revives per second.
@@ -155,8 +163,8 @@ end
 BiterRevive.OnLoad = function()
     -- Don't use Event libraries as simple usage case and not needed overheads in profiler.
     script.on_nth_tick(DelayGroupingTicks, BiterRevive.ProcessTasks)
-    script.on_event(defines.events.on_entity_died, BiterRevive.OnEntityDied, { { filter = "type", type = "unit" } })
-    script.on_event(defines.events.on_post_entity_died, BiterRevive.OnPostEntityDied, { { filter = "type", type = "unit" } })
+    script.on_event(defines.events.on_entity_died, BiterRevive.OnEntityDied, { { filter = "type", type = "unit" }, { filter = "turret" } })
+    script.on_event(defines.events.on_post_entity_died, BiterRevive.OnPostEntityDied, { { filter = "type", type = "unit" }, { filter = "type", type = "turret" }, { filter = "type", type = "ammo-turret" }, { filter = "type", type = "electric-turret" }, { filter = "type", type = "fluid-turret" } })
     script.on_event(defines.events.on_forces_merged, BiterRevive.OnForcesMerged)
     script.on_event(defines.events.on_surface_deleted, BiterRevive.OnSurfaceRemoved)
     script.on_event(defines.events.on_surface_cleared, BiterRevive.OnSurfaceRemoved)
@@ -172,24 +180,46 @@ end
 --- When a monitored entity type has died review it and if appropriate add it to the revive queue.
 ---@param event on_entity_died
 BiterRevive.OnEntityDied = function(event)
-    -- Currently only even so filtered to "type = unit" and entity will always be valid as nothing within the mod can invalid it.
+    -- Currently only event so filtered to unit & turret. Entity will always be valid as nothing within the mod can invalid it.
     local entity = event.entity
 
+    -- Work out the revive type, as different filtering logic is used for each.
+    local entity_type = entity.type
+    local reviveType ---@type ReviveTypes
+    if entity_type == "unit" then
+        reviveType = "unit"
+    elseif entity_type == "turret" or entity_type == "ammo-turret" or entity_type == "electric-turret" or entity_type == "fluid-turret" then
+        reviveType = "turret"
+    end
+
+    -- Handle turret related excludes.
+    if not global.reviveWorms then
+        -- We're not reviving worms, so check if this is one.
+        if reviveType == "turret" then
+            return
+        end
+    else
+        -- We are reviving worms, so if this is a turret check it breaths air.
+        if reviveType == "turret" and entity.prototype.flags["breaths-air"] == nil then
+            return
+        end
+    end
+
     -- Have to get unit_number to get any previous revive count passed on from previous iterations of the unit. Always clear the table entry to stop it infinitely growing. Do the clear here rather than in every return block for sanity.
-    local entity_unitNumber = entity.unit_number ---@cast entity_unitNumber - nil # Units always have unit_numbers.
+    local entity_unitNumber = entity.unit_number ---@cast entity_unitNumber - nil # Units & turrets always have unit_numbers.
     local previousRevives = global.unitReviveCount[entity_unitNumber] or 0
     global.unitReviveCount[entity_unitNumber] = nil
 
     -- If there is a unit revive limit check if the unit has reached it.
     if global.maxRevivesPerUnit ~= 0 and previousRevives >= global.maxRevivesPerUnit then
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, reviveType)
         return
     end
 
     local entity_name = entity.name
     -- Check if the prototype name is blacklisted.
     if global.blacklistedPrototypeNames[entity_name] ~= nil then
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, entity_name)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, reviveType, entity_name)
         return
     end
 
@@ -197,7 +227,7 @@ BiterRevive.OnEntityDied = function(event)
     local unitsForce_index = unitsForce.index
     -- Check if the force is blacklisted.
     if global.blacklistedForceIds[unitsForce_index] ~= nil then
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, entity_name, unitsForce, unitsForce_index)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, reviveType, entity_name, unitsForce, unitsForce_index)
         return
     end
 
@@ -216,12 +246,12 @@ BiterRevive.OnEntityDied = function(event)
     -- Random chance of entity being revived.
     if forceReviveChanceObject.reviveChance == 0 then
         -- No chance so just abort.
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, entity_name, unitsForce, unitsForce_index)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, reviveType, entity_name, unitsForce, unitsForce_index)
         return
     end
     if math_random() > forceReviveChanceObject.reviveChance then
         -- Failed random so abort.
-        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, entity_name, unitsForce, unitsForce_index)
+        BiterRevive.RaiseWontBeRevivedCustomEvent(entity, entity_unitNumber, reviveType, entity_name, unitsForce, unitsForce_index)
         return
     end
 
@@ -230,14 +260,15 @@ BiterRevive.OnEntityDied = function(event)
     local reviveDetails = {
         unitNumber = entity_unitNumber,
         prototypeName = entity_name,
+        reviveType = reviveType,
         orientation = entity.orientation,
         force = unitsForce,
         forceId = unitsForce_index,
         surface = entity.surface,
         position = nil, -- Populate by on_post_entity_died event as its a non API call then.
         previousRevives = previousRevives,
-        command = entity.command,
-        distractionCommand = entity.distraction_command
+        command = reviveType == "unit" and entity.command or nil,
+        distractionCommand = reviveType == "unit" and entity.distraction_command or nil
     }
 
     -- Store a reference to the reviveDetails as we will add to it from another event.
@@ -266,28 +297,29 @@ BiterRevive.RaiseWillBeRevivedCustomEvent = function(entity, reviveDetails)
     -- If no other mods wants the event don't bother raising it.
     if not BiterWillBeRevivedCustomEventUsed then return end
 
-    local customEventDetails = { name = BiterWillBeRevivedEventId, entity = entity, unitNumber = reviveDetails.unitNumber, entityName = reviveDetails.prototypeName, surface = reviveDetails.surface, force = reviveDetails.force, forceIndex = reviveDetails.forceId, orientation = reviveDetails.orientation }
+    local customEventDetails = { name = BiterWillBeRevivedEventId, entity = entity, unitNumber = reviveDetails.unitNumber, reviveType = reviveDetails.reviveType, entityName = reviveDetails.prototypeName, surface = reviveDetails.surface, force = reviveDetails.force, forceIndex = reviveDetails.forceId, orientation = reviveDetails.orientation }
     Events.RaiseEvent(customEventDetails)
 end
 
 --- Called when a biter won't be revived in the future.
 ---@param entity LuaEntity
 ---@param entityUnitNumber uint
+---@param reviveType ReviveTypes
 ---@param entityName string|nil
 ---@param force LuaForce|nil
 ---@param forceIndex uint|nil
-BiterRevive.RaiseWontBeRevivedCustomEvent = function(entity, entityUnitNumber, entityName, force, forceIndex)
+BiterRevive.RaiseWontBeRevivedCustomEvent = function(entity, entityUnitNumber, reviveType, entityName, force, forceIndex)
     -- If no other mods wants the event don't bother raising it.
     if not BiterWontBeRevivedCustomEventUsed then return end
 
-    local customEventDetails = { name = BiterWontBeRevivedEventId, entity = entity, unitNumber = entityUnitNumber, entityName = entityName, force = force, forceIndex = forceIndex }
+    local customEventDetails = { name = BiterWontBeRevivedEventId, entity = entity, unitNumber = entityUnitNumber, reviveType = reviveType, entityName = entityName, force = force, forceIndex = forceIndex }
     Events.RaiseEvent(customEventDetails)
 end
 
 --- Called after the entity has died and the corpse is present.
 ---@param event on_post_entity_died
 BiterRevive.OnPostEntityDied = function(event)
-    -- If no revive details then this event isn't for a unit that we care about.
+    -- If no revive details then this event isn't for a unit/turret that we care about.
     local unitNumber = event.unit_number
     if unitNumber == nil then
         return
@@ -442,7 +474,8 @@ BiterRevive.ProcessReviveQueue = function(event)
 
     -- Check each group's tick for any entries we need to process. In general it will just be 1 tick groups worth, but if there are more revives than max allowed then it may have to check multiple tick groups until it has caught up.
     -- As dictionary keys aren't sorted and this is a sparse array of tick keys they won't be in sequential order when new ones are added.
-    local spawnPosition, nextTickToProcess
+    ---@type MapPosition?, uint, LuaEntity?
+    local spawnPosition, nextTickToProcess, revivedEntity
     local reviveQueueTickObjects ---@type ReviveQueueTickObject[]
     for groupTick = global.reviveQueueNextTickToProcess, event.tick, DelayGroupingTicks do
         ---@cast groupTick uint
@@ -450,13 +483,18 @@ BiterRevive.ProcessReviveQueue = function(event)
         if reviveQueueTickObjects ~= nil then
             for reviveIndex, reviveDetails in pairs(reviveQueueTickObjects) do
                 -- We handle surface's being deleted and forces merged via events so no need to check them per execution here.
-                local revivedBiter
 
-                -- Biters don't block other biters placement locations. So only if the player builds over a reviving biter or a player blocks the placement by character or vehicle will the reviving biter look further out to find somewhere to revive. Can't just revive the biter in position blindly as it will be created on top of the blocking entity.
-                spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 20, 0.1)
+                -- Spawn position is based on the entity type we are going to revive.
+                if reviveDetails.reviveType == "unit" then
+                    -- Biters don't block other biters placement locations. So only if the player builds over a reviving biter or a player blocks the placement by character or vehicle will the reviving biter look further out to find somewhere to revive. Can't just revive the biter in position blindly as it will be created on top of the blocking entity.
+                    spawnPosition = reviveDetails.surface.find_non_colliding_position(reviveDetails.prototypeName, reviveDetails.position, 20, 0.1)
+                else
+                    spawnPosition = reviveDetails.position
+                end
+
                 -- If no spawning point is found just forget about this revive as very unlikely to happen.
                 if spawnPosition ~= nil then
-                    revivedBiter = reviveDetails.surface.create_entity {
+                    revivedEntity = reviveDetails.surface.create_entity {
                         name = reviveDetails.prototypeName,
                         position = spawnPosition,
                         force = reviveDetails.force,
@@ -467,14 +505,14 @@ BiterRevive.ProcessReviveQueue = function(event)
                 end
 
                 -- If the revive failed for any reason notify any listening mods. As they would have been expecting a revive from previous broadcasted events.
-                if revivedBiter == nil then
+                if revivedEntity == nil then
                     BiterRevive.RaiseReviveFailedCustomEvent(reviveDetails)
                 end
 
                 -- If the unit was revived do some further tasks.
-                if revivedBiter ~= nil then
+                if revivedEntity ~= nil then
                     -- Record the revive count for the new unit.
-                    global.unitReviveCount[revivedBiter.unit_number--[[@as uint]] ] = reviveDetails.previousRevives + 1
+                    global.unitReviveCount[revivedEntity.unit_number--[[@as uint]] ] = reviveDetails.previousRevives + 1
 
                     -- Remove any corpses for the revived unit.
                     for _, corpse in pairs(reviveDetails.corpses) do
@@ -485,16 +523,24 @@ BiterRevive.ProcessReviveQueue = function(event)
                     end
 
                     -- Give this unit its old commands back if it had any. Have ti check any entity referenced in the command is still valid, otherwise can;t give the command.
-                    if reviveDetails.command ~= nil and BiterRevive.ValidateCommandEntities(reviveDetails.command) then
-                        revivedBiter.set_command(reviveDetails.command)
+                    if reviveDetails.reviveType == "unit" then
+                        if reviveDetails.command ~= nil and BiterRevive.ValidateCommandEntities(reviveDetails.command) then
+                            revivedEntity.set_command(reviveDetails.command)
+                        end
+                        if reviveDetails.distractionCommand ~= nil and BiterRevive.ValidateCommandEntities(reviveDetails.distractionCommand) then
+                            revivedEntity.set_distraction_command(reviveDetails.distractionCommand)
+                        end
                     end
-                    if reviveDetails.distractionCommand ~= nil and BiterRevive.ValidateCommandEntities(reviveDetails.distractionCommand) then
-                        revivedBiter.set_distraction_command(reviveDetails.distractionCommand)
+
+                    -- Worms return to their old spot, so we will move anything out of the way that we can, and destroy anything else.
+                    if reviveDetails.reviveType == "turret" then
+                        BiterRevive.DisplaceEntitiesInBoundingBox(reviveDetails.surface, revivedEntity)
                     end
                 end
 
                 -- Remove this revive from the current tick as done.
                 reviveQueueTickObjects[reviveIndex] = nil
+                revivedEntity = nil
 
                 -- Count our revive and stop processing if we have done our number for this cycle.
                 revivesRemainingThisCycle = revivesRemainingThisCycle - 1
@@ -539,7 +585,7 @@ BiterRevive.RaiseReviveFailedCustomEvent = function(reviveDetails)
     -- If no other mods wants the event don't bother raising it.
     if not BiterReviveFailedCustomEventUsed then return end
 
-    local customEventDetails = { name = BiterReviveFailedEventId, unitNumber = reviveDetails.unitNumber, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force, forceIndex = reviveDetails.forceId }
+    local customEventDetails = { name = BiterReviveFailedEventId, unitNumber = reviveDetails.unitNumber, reviveType = reviveDetails.reviveType, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force, forceIndex = reviveDetails.forceId }
     Events.RaiseEvent(customEventDetails)
 end
 
@@ -549,8 +595,27 @@ BiterRevive.RaiseReviveSuccessCustomEvent = function(reviveDetails)
     -- If no other mods wants the event don't bother raising it.
     if not BiterReviveSuccessCustomEventUsed then return end
 
-    local customEventDetails = { name = BiterReviveSuccessEventId, unitNumber = reviveDetails.unitNumber, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force, forceIndex = reviveDetails.forceId }
+    local customEventDetails = { name = BiterReviveSuccessEventId, unitNumber = reviveDetails.unitNumber, reviveType = reviveDetails.reviveType, prototypeName = reviveDetails.prototypeName, surface = reviveDetails.surface, position = reviveDetails.position, orientation = reviveDetails.orientation, force = reviveDetails.force, forceIndex = reviveDetails.forceId }
     Events.RaiseEvent(customEventDetails)
+end
+
+--- Move any teleportable entities in the bounding box of an entity out of the way. Anything non movable is just killed.
+---@param surface LuaSurface
+---@param createdEntity LuaEntity
+BiterRevive.DisplaceEntitiesInBoundingBox = function(surface, createdEntity)
+    for _, entity in pairs(EntityUtils.ReturnAllObjectsInArea(surface, createdEntity.bounding_box, true, nil, true, true, { createdEntity })) do
+        local entityMoved = false
+        if MovableEntityTypes[entity.type] ~= nil then
+            local entityNewPosition = surface.find_non_colliding_position(entity.name, entity.position, 2, 0.1)
+            if entityNewPosition ~= nil then
+                entity.teleport(entityNewPosition)
+                entityMoved = true
+            end
+        end
+        if not entityMoved then
+            entity.die("neutral", createdEntity)
+        end
+    end
 end
 
 --- Checks that a command only references valid entities.
@@ -978,6 +1043,10 @@ BiterRevive.OnSettingChanged = function(event)
                 end
             end
         end
+    end
+    if event == nil or event.setting == "biter_revive-include_biological_turrets" then
+        local settingValue = settings.global["biter_revive-include_biological_turrets"].value --[[@as boolean]]
+        global.reviveWorms = settingValue
     end
 
     -- Update all cached force data if its needed after settings changed.

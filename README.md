@@ -1,6 +1,6 @@
 # Factorio-Biter-Revive
 
-Any biter that dies will have a chance to revive back to life.
+Any biter or worm (option) that dies will have a chance to revive back to life.
 
 ![Biter Revive Example](https://giant.gfycat.com/ChillyKnobbyAffenpinscher.mp4)
 
@@ -11,14 +11,15 @@ Includes a large selection of mod settings to control base revival chance and be
 Details
 =======
 
-- Any `unit` entity is available for revival with various mod settings allowing fine tuning of what's excluded by entity and force name. By default the mod settings are configured only for the compilatron unit to be excluded.
+- Any `unit` or worm entity is available for revival with various mod settings allowing fine tuning of what's excluded by entity and force name. By default the mod settings are configured for the `compilatron` unit and the `player` force to be excluded. Worm's are one of the `turret` entity types that have the `breath-air` prototype flag.
 - Revive chance is a scale based on configurable settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
-- Multiple times a second the biters awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of biters being revived and instantly dying.
-- Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the biter dies, but instead a fraction of a second later.
-- Biters waiting their delay time to revive can have configurable text shown above them until they revive, i.e. snore, BRB, its just a flesh wound, etc.
+- Multiple times a second the enemies awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of enemies being revived and instantly dying.
+- Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the enemy dies, but instead a fraction of a second later.
+- Enemies waiting their delay time to revive can have configurable text shown above them until they revive, i.e. snore, BRB, its just a flesh wound, etc.
 - There is a mod setting to limit how many times the same unit can be revived. It defaults to unlimited. Its useful for cases of very high revive rate when you don't want the risk of near infinite revivals due to random chances.
-- If a biter revive location is blocked by buildings after the biter has died then the biter will revive in the nearest available location. This is to prevent griefing by building large walls or buildings over delayed revival biters.
+- If a biter revive location is blocked by buildings after the enemy has died then the biter will revive in the nearest available location. This is to prevent griefing by building large walls or buildings over delayed revival biters.
 - A revived biter will have its pre death attack command applied back to it if possible. Otherwise the revived biters will be controlled by Factorio as normal.
+- When a worm revives (mod option) it will push anything it can out of the way. ANything that can't be moved will be destroyed by the force of the worm returning.
 
 
 
@@ -27,7 +28,7 @@ Revive Chance Formula
 
 This is a special setting for when you want non linear revive chance growth in relation to evolution. When the default value of the setting is blank/empty then the simpler `Chance of revive % per evolution %` setting value will be used by the mod. When the formula setting is populated it will take priority over the simpler value setting.
 
-The formula must be valid Lua written as suitable for use after the keyword `return` and will be run within the mod. The biter's force evolution above the minimum runtime setting will be passed in as a Lua variable `evo` as a numeric value of the evolution percentage. So if the minimum is 70 (%) and the biters force evo is 72 (%) the `evo` variable will have a value of 2.
+The formula must be valid Lua written as suitable for use after the keyword `return` and will be run within the mod. The enemy's force evolution above the minimum runtime setting will be passed in as a Lua variable `evo` as a numeric value of the evolution percentage. So if the minimum is 70 (%) and the enemies force evo is 72 (%) the `evo` variable will have a value of 2.
 
 Example of valid formula string: `evo * 1.5`
 
@@ -42,7 +43,7 @@ Example of valid formula string: `evo * 1.5`
 Modifiers (RCON)
 ==============
 
-The modifiers concept is designed as a highly flexible way of applying setting values and modifiers to them. Modifiers apply for a limited duration and the mod supports multiple being active at one time and "stacking" with each other. When a biter dies the mod evaluates all active modifier settings and the mod settings in a hierarchical manner to establish the correct current runtime settings.
+The modifiers concept is designed as a highly flexible way of applying setting values and modifiers to them. Modifiers apply for a limited duration and the mod supports multiple being active at one time and "stacking" with each other. When an enemy dies the mod evaluates all active modifier settings and the mod settings in a hierarchical manner to establish the correct current runtime settings.
 
 
 
@@ -86,7 +87,7 @@ Modifier options are provided with a single Lua object of the below structure:
 | settings | chanceFormula | optional | string | The revival chance formula as a text string - Equivalent of mod setting `Chance of revive formula`. Note: this setting is an exception to the standard command evaluation logic, see Logic Exceptions above. |
 | settings | delayMin | optional | int | The revive delay minimum in seconds, i.e. 0 = 0 seconds - equivalent to the mod setting `Revive delay minimum seconds`. |
 | settings | delayMax | optional | int | The revive delay maximum in seconds , i.e. 5 = 5 seconds - equivalent to the mod setting `Revive delay maximum seconds`. |
-| settings | delayText | optional | string | The text to be shown above biters that are waiting their delay to revive, as a comma separated string list (string) - equivalent to the mod setting `Delayed revive text`. Note: this setting is an exception to the standard command evaluation logic, see Logic Exceptions above. |
+| settings | delayText | optional | string | The text to be shown above enemies that are waiting their delay to revive, as a comma separated string list (string) - equivalent to the mod setting `Delayed revive text`. Note: this setting is an exception to the standard command evaluation logic, see Logic Exceptions above. |
 | settings | maxRevives | optional | int | The maximum number of times a single unit can be revived, with 0 being unlimited (nearly) - equivalent to the mod setting `Maximum revives per unit`. |
 |  | priority | mandatory | string | The priority for this command as a text string. Supported values `enforced`, `base`, `add`. |
 
@@ -107,11 +108,11 @@ The options must be provided as a Lua table.
 
 Examples:
 
-1. Make biters revive in all cases for 1 minute and have zombie delay text:
+1. Make enemies revive in all cases for 1 minute and have zombie delay text:
    > `/sc remote.call('biter_revive', 'add_modifier', {duration=60, settings={ evoMin=0, evoMax=100, chanceBase=100, chanceFormula="", chancePerEvo=0, delayText="uuggghh, raaaugh, blaaagh"}, priority="enforced"} )`
-2. Make biters have a base delayed revive time of between 1 and 2 minutes for 5 minutes, with any other runtime settings being applied still:
+2. Make enemies have a base delayed revive time of between 1 and 2 minutes for 5 minutes, with any other runtime settings being applied still:
    > `/sc remote.call('biter_revive', 'add_modifier', {duration=300, settings={ delayMin=60, delayMax=120}, priority="base"} )`
-3. Make biters 5% more likely to revive than the current runtime settings would be otherwise, for 3 minutes:
+3. Make enemies 5% more likely to revive than the current runtime settings would be otherwise, for 3 minutes:
    > `/sc remote.call('biter_revive', 'add_modifier', {duration=180, settings={ chanceBase=5 }, priority="add"} )`
 
 ----------------------------
@@ -126,11 +127,11 @@ The modifiers options must be provided as a JSON string of a table.
 
 Examples:
 
-1. Make biters revive in all cases for 1 minute and have zombie delay text:
+1. Make enemies revive in all cases for 1 minute and have zombie delay text:
    > `/biter_revive_add_modifier {"duration":60, "settings":{ "evoMin":0, "evoMax":100, "chanceBase":100, "chanceFormula":"", "chancePerEvo":0, "delayText":"uuggghh, raaaugh, blaaagh"}, "priority":"enforced"}`
-2. Make biters have a base delayed revive time of between 1 and 2 minutes for 5 minutes, with any other runtime settings being applied still:
+2. Make enemies have a base delayed revive time of between 1 and 2 minutes for 5 minutes, with any other runtime settings being applied still:
    > `/biter_revive_add_modifier {"duration":300, "settings":{ "delayMin":60, "delayMax":120}, "priority":"base"}`
-3. Make biters 5% more likely to revive than the current runtime settings would be otherwise, for 3 minutes:
+3. Make enemies 5% more likely to revive than the current runtime settings would be otherwise, for 3 minutes:
    > `/biter_revive_add_modifier {"duration":180, "settings":{ "chanceBase":5 }, "priority":"add"}`
 
 -------------------------------
@@ -159,8 +160,8 @@ Command Name: `biter_revive_dump_state_data`
 Mod Compatibility Events
 =============
 
-The mod raises a number of custom events based around if it will/won't revive biters and if the revives are successful or not. This allows other mods to react to non revived biters (truly dead) and avoid reacting to biters that are revived as if they actually died.
+The mod raises a number of custom events based around if it will/won't revive enemies (biters or worms) and if the revives are successful or not. This allows other mods to react to non revived enemies (truly dead) and avoid reacting to enemies that are revived as if they actually died.
 
-This logic is utilised by my Biter Reincarnation mod to only reincarnate truly dead biters in to trees.
+This logic is utilised by my Biter Reincarnation mod to only reincarnate truly dead biters in to trees. As such it is initially designed around its requirements.
 
 Modding details of these events can be found here: https://github.com/muppet9010/Factorio-Biter-Revive/blob/main/MOD-COMPATIBILITY.md
