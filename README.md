@@ -13,13 +13,13 @@ Details
 
 - Any `unit` or worm entity is available for revival with various mod settings allowing fine tuning of what's excluded by entity and force name. By default the mod settings are configured for the `compilatron` unit and the `player` force to be excluded. Worm's are one of the `turret` entity types that have the `breath-air` prototype flag.
 - Revive chance is a scale based on configurable settings using a min and max evolution range for a min and max revive chance. This should allow any desired effect to be achieved.
-- Multiple times a second the enemies awaiting reviving will be processed and up to the maximum (max revives per second mod setting) performed. This is done to both allow an optional delay in reviving and to avoid loops of enemies being revived and instantly dying.
+- Multiple times a second the enemies awaiting reviving will be processed and up to the maximum revives done, controlled by the max revives per second mod setting. This process avoids excessive revives being done at a time, so limits UPS impact during excessive biter death periods.
 - Revives have a random delay between configurable min and max seconds from 0 upwards. To avoid infinite revive/death loops a 0 second revive won't happen the moment the enemy dies, but instead a fraction of a second later.
 - Enemies waiting their delay time to revive can have configurable text shown above them until they revive, i.e. snore, BRB, its just a flesh wound, etc.
 - There is a mod setting to limit how many times the same unit can be revived. It defaults to unlimited. Its useful for cases of very high revive rate when you don't want the risk of near infinite revivals due to random chances.
 - If a biter revive location is blocked by buildings after the enemy has died then the biter will revive in the nearest available location. This is to prevent griefing by building large walls or buildings over delayed revival biters.
 - A revived biter will have its pre death attack command applied back to it if possible. Otherwise the revived biters will be controlled by Factorio as normal.
-- When a worm revives (mod option) it will push anything it can out of the way. ANything that can't be moved will be destroyed by the force of the worm returning.
+- When a worm revives (mod option) it will push anything it can out of the way. Anything that can't be moved will be destroyed by the force of the worm returning.
 
 
 

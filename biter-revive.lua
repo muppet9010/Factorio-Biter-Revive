@@ -522,7 +522,7 @@ BiterRevive.ProcessReviveQueue = function(event)
                         end
                     end
 
-                    -- Give this unit its old commands back if it had any. Have ti check any entity referenced in the command is still valid, otherwise can;t give the command.
+                    -- Give this unit its old commands back if it had any. Have ti check any entity referenced in the command is still valid, otherwise can't give the command.
                     if reviveDetails.reviveType == "unit" then
                         if reviveDetails.command ~= nil and BiterRevive.ValidateCommandEntities(reviveDetails.command) then
                             revivedEntity.set_command(reviveDetails.command)
@@ -633,6 +633,7 @@ BiterRevive.ValidateCommandEntities = function(command)
         for subCommandIndex, subCommand in pairs(command.commands) do
             if not BiterRevive.ValidateCommandEntities(subCommand) then
                 -- Remove any invalid sub commands.
+                -- CODE NOTE: keep this as an array and not a gappy table as technically that's what Factorio lists as wanting for API calls. Also its unlikely we'll ever remove a command.
                 table.remove(command.commands, subCommandIndex)
             end
             if #command.commands == 0 then
