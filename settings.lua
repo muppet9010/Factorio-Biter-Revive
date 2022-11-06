@@ -92,25 +92,25 @@ data:extend(
             order = "2000"
         },
         {
+            name = "biter_revive-include_biological_turrets",
+            type = "bool-setting",
+            default_value = false,
+            setting_type = "runtime-global",
+            order = "2001"
+        },
+        {
             name = "biter_revive-blacklisted_prototype_names",
             type = "string-setting",
             allow_blank = true,
             default_value = "compilatron",
             setting_type = "runtime-global",
-            order = "2001"
+            order = "2002"
         },
         {
             name = "biter_revive-blacklisted_force_names",
             type = "string-setting",
             allow_blank = true,
             default_value = "player",
-            setting_type = "runtime-global",
-            order = "2002"
-        },
-        {
-            name = "biter_revive-include_biological_turrets",
-            type = "bool-setting",
-            default_value = false,
             setting_type = "runtime-global",
             order = "2003"
         }

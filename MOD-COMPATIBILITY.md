@@ -125,11 +125,40 @@ The custom event will include the below event specific fields in addition to the
 
 
 
+Change to Worms Being Revived setting
+======================
+
+If the mod revives worms (turrets that breaths-air) or not is controlled by the `Revive worms` runtime mod setting. When this is active worms deaths will be reported via the custom events for Biter Revives, just like units are. However, when the setting is disabled worms deaths will not be reported and any other mod will need to listen to the core Factorio events for them. Given the worms reviving setting is a runtime setting and can be changed mid game a custom event it raised when the setting is changed so that other mods can utilise it to update their own Factorio event registrations.
+
+#### Get custom event Id
+You will need to get the custom event Id for your mod to listen to via a remote interface call.
+
+```
+remote.call("biter_revive", "get_worm_revive_setting_changed_event_id")
+```
+
+This returns the below values:
+| Return order | Type | Details |
+| --- | --- | --- |
+| 1 | uint | The custom event Id to listen to for changes to the `Worm reviving` runtime mod setting. |
+| 2 | boolean | The current value of the `Worm reviving` runtime mod setting. This is needed as the event won't fire during `on_load`, only during `on_init` and `on_configuration_changed`. |
+
+#### Custom event
+
+The custom event will include the below event specific fields in addition to the core Factorio ones.
+
+| Name | Type | Details |
+| --- | --- | --- |
+| currentValue | boolean | The current value of the `Worm reviving` runtime mod setting. |
+
+
+
+
 General Notes
 =========
 
 - To ensure correct ordering of these events its advised to have this Biter Revive mod as dependency of your mod. So that Biter Revive loads and has its events run first.
-- These events allow other mods to not need to listen to when a unit dies via Factorio events. The event `on_entity_died` with the filter of `{ filter = "type", type = "unit" }` can be ignored unless you want the extra information on the event. If worm revival is enabled then the mod will also raise events for the various turret entity types that breath-air, Otherwise no events are raised for the turret types.
+- These events allow other mods to not need to listen to when a unit dies via Factorio events. The event `on_entity_died` with the filter of `{ filter = "type", type = "unit" }` can be ignored unless you want the extra information on the event. For details about how this affects worms (biological turrets) see the `Change to Worms Being Revived setting` section above.
 - The custom events often include pre-obtained fields from the died entity. This is as they were obtained via API calls as part of this mods processing and so are included to help reduce other mods need to duplicate these Factorio API calls.
 - Some of the custom events have optional fields that they may include, type of `?`. This is based on the logic within the mod that may have already obtained these values. No fields are obtained specifically for inclusion in events.
 - This mod only raises a custom event if another mod has requested the relevant custom event Id via the remote interface. This is to avoid the mod raising the custom events in to Factorio if no other mod is going to utilise them.

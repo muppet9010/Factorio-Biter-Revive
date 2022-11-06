@@ -92,6 +92,8 @@ local BiterReviveFailedEventId ---@type uint # Populated during OnLoad and used 
 local BiterReviveFailedCustomEventUsed = false ---@type boolean # Updated when another mod requests the event Id.
 local BiterReviveSuccessEventId ---@type uint # Populated during OnLoad and used at run time.
 local BiterReviveSuccessCustomEventUsed = false ---@type boolean # Updated when another mod requests the event Id.
+local WormReviveSettingChangedCustomEventId ---@type uint # Populated during OnLoad and used at run time.
+local WormReviveSettingChangedCustomEventUsed = false ---@type boolean # Updated when another mod requests the event Id.
 
 BiterRevive.CreateGlobals = function()
     global.reviveQueue = global.reviveQueue or {} ---@type table<uint, ReviveQueueTickObject[]> @ This will be a sparse table at both the Tick key level and in the array of ReviveQueueTickObjects once they start to be processed.
@@ -175,6 +177,7 @@ BiterRevive.OnLoad = function()
     BiterWontBeRevivedEventId = Events.RegisterCustomEventName("BiterRevive.BiterNotRevived")
     BiterReviveFailedEventId = Events.RegisterCustomEventName("BiterRevive.BiterReviveFailed")
     BiterReviveSuccessEventId = Events.RegisterCustomEventName("BiterRevive.BiterReviveSuccess")
+    WormReviveSettingChangedCustomEventId = Events.RegisterCustomEventName("BiterRevive.WormReviveSettingChanged")
 end
 
 --- When a monitored entity type has died review it and if appropriate add it to the revive queue.
@@ -190,18 +193,14 @@ BiterRevive.OnEntityDied = function(event)
         reviveType = "unit"
     elseif entity_type == "turret" or entity_type == "ammo-turret" or entity_type == "electric-turret" or entity_type == "fluid-turret" then
         reviveType = "turret"
-    end
-
-    -- Handle turret related excludes.
-    if not global.reviveWorms then
-        -- We're not reviving worms, so check if this is one.
-        if reviveType == "turret" then
+        if not global.reviveWorms then
+            -- We're not reviving worms.
             return
-        end
-    else
-        -- We are reviving worms, so if this is a turret check it breaths air.
-        if reviveType == "turret" and entity.prototype.flags["breaths-air"] == nil then
-            return
+        else
+            -- We are reviving worms, so check it breaths air.
+            if entity.prototype.flags["breaths-air"] == nil then
+                return
+            end
         end
     end
 
@@ -255,6 +254,19 @@ BiterRevive.OnEntityDied = function(event)
         return
     end
 
+    -- Handle any command if its a unit.
+    local command, distractionCommand
+    if reviveType == "unit" then
+        command, distractionCommand = entity.command, entity.distraction_command
+        -- If the command is for a group then get the underlying command and we will store that. As the group may well not exist when we try and revive, and if it does the revived biter is likely far away.
+        if command ~= nil and command.group ~= nil then
+            command = command.group.command
+        end
+        if distractionCommand ~= nil and distractionCommand.group ~= nil then
+            distractionCommand = distractionCommand.group.distraction_command
+        end
+    end
+
     -- Make the details object to be queued.
     ---@type ReviveQueueTickObject
     local reviveDetails = {
@@ -267,8 +279,8 @@ BiterRevive.OnEntityDied = function(event)
         surface = entity.surface,
         position = nil, -- Populate by on_post_entity_died event as its a non API call then.
         previousRevives = previousRevives,
-        command = reviveType == "unit" and entity.command or nil,
-        distractionCommand = reviveType == "unit" and entity.distraction_command or nil
+        command = command,
+        distractionCommand = distractionCommand
     }
 
     -- Store a reference to the reviveDetails as we will add to it from another event.
@@ -522,7 +534,7 @@ BiterRevive.ProcessReviveQueue = function(event)
                         end
                     end
 
-                    -- Give this unit its old commands back if it had any. Have ti check any entity referenced in the command is still valid, otherwise can't give the command.
+                    -- Give this unit its old commands back if it had any. Have it check any entity referenced in the command is still valid, otherwise can't give the command. If the unit was in a group we will give it the old commands back, but it will be removed from the group.
                     if reviveDetails.reviveType == "unit" then
                         if reviveDetails.command ~= nil and BiterRevive.ValidateCommandEntities(reviveDetails.command) then
                             revivedEntity.set_command(reviveDetails.command)
@@ -599,6 +611,17 @@ BiterRevive.RaiseReviveSuccessCustomEvent = function(reviveDetails)
     Events.RaiseEvent(customEventDetails)
 end
 
+
+--- Called when a the global runtime mod setting that controls if worms revive changes.
+---@param settingValue boolean
+BiterRevive.RaiseWormReviveSettingChangedCustomEvent = function(settingValue)
+    -- If no other mods wants the event don't bother raising it.
+    if not WormReviveSettingChangedCustomEventUsed then return end
+
+    local customEventDetails = { name = WormReviveSettingChangedCustomEventId, currentValue = settingValue }
+    Events.RaiseEvent(customEventDetails)
+end
+
 --- Move any teleportable entities in the bounding box of an entity out of the way. Anything non movable is just killed.
 ---@param surface LuaSurface
 ---@param createdEntity LuaEntity
@@ -622,14 +645,30 @@ end
 ---@param command Command
 ---@return boolean isValid
 BiterRevive.ValidateCommandEntities = function(command)
-    if command.target ~= nil and not command.target.valid then
-        return false
-    elseif command.destination_entity ~= nil and not command.destination_entity.valid then
-        return false
-    elseif command.from ~= nil and not command.from.valid then
-        return false
-    end
-    if command.commands ~= nil then
+    -- We strip out any group commands prior to this.
+    if command.type == 1 then
+        -- An `attack` command.
+        if command.target == nil or not command.target.valid then
+            -- Mandatory.
+            return false
+        end
+    elseif command.type == 2 then
+        -- A `go_to_location` command.
+        if command.destination_entity ~= nil and not command.destination_entity.valid then
+            -- If its populated it must be valid as it takes priority over `destination`.
+            return false
+        elseif command.destination == nil and command.destination_entity == nil then
+            -- One of them must be populated.
+            return false
+        end
+    elseif command.type == 8 then
+        -- A `flee` command.
+        if command.from == nil or not command.from.valid then
+            -- Mandatory.
+            return false
+        end
+    elseif command.type == 3 then
+        -- A `compound` command.
         for subCommandIndex, subCommand in pairs(command.commands) do
             if not BiterRevive.ValidateCommandEntities(subCommand) then
                 -- Remove any invalid sub commands.
@@ -1048,6 +1087,7 @@ BiterRevive.OnSettingChanged = function(event)
     if event == nil or event.setting == "biter_revive-include_biological_turrets" then
         local settingValue = settings.global["biter_revive-include_biological_turrets"].value --[[@as boolean]]
         global.reviveWorms = settingValue
+        BiterRevive.RaiseWormReviveSettingChangedCustomEvent(settingValue)
     end
 
     -- Update all cached force data if its needed after settings changed.
@@ -1340,6 +1380,13 @@ end
 BiterRevive.GetBiterReviveSuccessEventId_Remote = function()
     BiterReviveSuccessCustomEventUsed = true
     return BiterReviveSuccessEventId
+end
+
+--- Called by other mods to get the custom event Id we will raise when the mod setting that controls if worms will revive is changed. Also returns the current value as no event will be raised for this.
+--- We also log if this was ever called so we only raise events if needed.
+BiterRevive.GetWormReviveSettingChangedEventId_Remote = function()
+    WormReviveSettingChangedCustomEventUsed = true
+    return WormReviveSettingChangedCustomEventId, global.reviveWorms
 end
 
 return BiterRevive

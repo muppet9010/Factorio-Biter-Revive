@@ -11,7 +11,8 @@ local function OnLoad()
         get_biter_will_be_revived_event_id = BiterRevive.GetBiterWillBeRevivedEventId_Remote,
         get_biter_wont_be_revived_event_id = BiterRevive.GetBiterWontBeRevivedEventId_Remote,
         get_biter_revive_failed_event_id = BiterRevive.GetBiterReviveFailedEventId_Remote,
-        get_biter_revive_success_event_id = BiterRevive.GetBiterReviveSuccessEventId_Remote
+        get_biter_revive_success_event_id = BiterRevive.GetBiterReviveSuccessEventId_Remote,
+        get_worm_revive_setting_changed_event_id = BiterRevive.GetWormReviveSettingChangedEventId_Remote
     })
 
     BiterRevive.OnLoad()
