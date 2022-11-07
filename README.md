@@ -19,7 +19,7 @@ Details
 - There is a mod setting to limit how many times the same unit can be revived. It defaults to unlimited. Its useful for cases of very high revive rate when you don't want the risk of near infinite revivals due to random chances.
 - If a biter revive location is blocked by buildings after the enemy has died then the biter will revive in the nearest available location. This is to prevent griefing by building large walls or buildings over delayed revival biters.
 - A revived biter will have its pre death attack command applied back to it if possible. Otherwise the revived biters will be controlled by Factorio as normal.
-- When a worm revives (mod option) it will push anything it can out of the way. Anything that can't be moved will be destroyed by the force of the worm returning.
+- When a worm revives (mod option) it will revive to the exact same position, pushing anything it can out of the way. Anything that can't be moved will be destroyed by the force of the worm returning.
 
 
 

@@ -9,5 +9,5 @@
     "dependencies": [
         "base >= 1.1"
     ],
-    "description": "A mod that revives biters based on various settings and evolution. Supports streamer chat integration."
+    "description": "A mod that revives biters and worms based on various settings and evolution. Supports streamer chat integration."
 }
