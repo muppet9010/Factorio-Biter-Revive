@@ -1,4 +1,16 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.3
+Date: 2022-11-07
+  Features:
+    - Added Custom Events that are raised when this mod does and does not revive a valid target. Remote Interfaces added to get these custom event Ids. See Readme for details.
+    - Added mod setting to revive worms (biological turrets) equally to biters. Does not include extra options to treat them differently, just on/off mod setting.
+    - Added Custom Event that is raised when this mod's `Worm Revive` runtime mod setting is changed. Remote Interfaces added to get these custom event Ids. See Readme for details.
+  Changes:
+    - Added `player` force as a default value to the blacklisted forces for revive setting.
+  Bugfixes:
+    - Fixed crash if a biter was part of a group on death and post revive the group was invalid. Now the original group command will be stored for just this biter and when the biter revives it will get the command, but not be part of the group.
+  Info:
+---------------------------------------------------------------------------------------------------
 Version: 1.1.2
 Date: 2022-10-25
   Features:
