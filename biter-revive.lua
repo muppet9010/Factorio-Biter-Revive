@@ -544,7 +544,7 @@ BiterRevive.ProcessReviveQueue = function(event)
                         end
                     end
 
-                    -- Worms return to their old spot, so we will move anything out of the way that we can, and destroy anything else.
+                    -- Worms return to their old spot, so we will move anything out of the way that we can, and destroy anything else. This should only really ever be units or if a player has tried to build on the corpse. So this shouldn't ever be in a situation to harm other biter buildings.
                     if reviveDetails.reviveType == "turret" then
                         BiterRevive.DisplaceEntitiesInBoundingBox(reviveDetails.surface, revivedEntity)
                     end
