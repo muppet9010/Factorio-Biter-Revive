@@ -1,0 +1,7 @@
+Bugs:
+
+Add:
+
+Future Concepts:
+	- Look at pollution cost of having biters revive. So mod can effectly reduce the UPS cost of many active biters moving across the map. https://mods.factorio.com/mod/biter_revive/discussion/637ddaf48231cc4c656414ed
+	
