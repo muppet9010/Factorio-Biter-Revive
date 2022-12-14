@@ -1,6 +1,7 @@
 Bugs:
 
 Add:
+	- Change default revives per second up from 50 to 200 for heavy biter attack periods. Checkl on this mods UPS usage for that scale of biter revives, but I suspect it nots too bad compared to all the biters already.
 
 Future Concepts:
 	- Look at pollution cost of having biters revive. So mod can effectly reduce the UPS cost of many active biters moving across the map. https://mods.factorio.com/mod/biter_revive/discussion/637ddaf48231cc4c656414ed

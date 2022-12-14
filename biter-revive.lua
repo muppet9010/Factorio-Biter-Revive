@@ -661,12 +661,6 @@ BiterRevive.ValidateCommandEntities = function(command)
             -- One of them must be populated.
             return false
         end
-    elseif command.type == 8 then
-        -- A `flee` command.
-        if command.from == nil or not command.from.valid then
-            -- Mandatory.
-            return false
-        end
     elseif command.type == 3 then
         -- A `compound` command.
         for subCommandIndex, subCommand in pairs(command.commands) do
@@ -679,6 +673,17 @@ BiterRevive.ValidateCommandEntities = function(command)
                 -- If there's no valid commands left in this compound command then the whole command is invalid.
                 return false
             end
+        end
+        -- elseif command.type == 4 then return false end -- This will never happen as when the biter dies we store any group's command and not the biters command to follow the group.
+    elseif command.type == 6 then
+        -- A `wander` command.
+        command.wander_in_group = false -- We will always have removed the biter from its group, so it should never expect to wander in a group even if it as before.
+        return true
+    elseif command.type == 8 then
+        -- A `flee` command.
+        if command.from == nil or not command.from.valid then
+            -- Mandatory.
+            return false
         end
     end
     return true

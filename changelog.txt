@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 1.1.4
+Date: 2022-12-14
+  Features:
+  Changes:
+  Bugfixes:
+    - Fix crash when biters that were just wandering in a group are killed and when they revived they would be told to try and wander in a group, but without a group. Now they just wander lonely.
+  Info:
+---------------------------------------------------------------------------------------------------
 Version: 1.1.3
 Date: 2022-11-07
   Features:
